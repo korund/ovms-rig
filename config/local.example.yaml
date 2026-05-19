@@ -1,0 +1,13 @@
+# Per-machine overrides. Copy to machine.yaml and edit; machine.yaml is gitignored.
+# Anything omitted here falls back to defaults or PATH lookup.
+
+runtime:
+  # Absolute path to the ovms binary. If omitted, the loader looks at PATH.
+  ovms_path: null
+  # Where to keep the OpenVINO compile cache (--cache_dir).
+  cache_dir: null
+
+models:
+  # Where the loader should place fetched HF models. If omitted, the standard
+  # huggingface_hub cache is used.
+  repository_path: null

@@ -1,0 +1,38 @@
+# Declarative deployment for OpenVINO Model Server.
+# Single source of truth for what the loader brings up.
+# Machine-specific values (paths, ports) live in local.yaml; see local.example.yaml.
+#
+# Shape mirrors the OVMS domain:
+#   - `models`  : identities (HF reference + revision), declared once
+#   - `served`  : HTTP endpoints, each backed by a model and a bag of LLMCalculator
+#                 fields. References into `models` are by name.
+# Speculative decoding is not a special pipeline mode here -- it emerges when a
+# served entry's `graph` contains `draft_model`. Drop that field and the same
+# tool produces a plain single-model setup, no special-casing.
+
+runtime:
+  ovms_version: ">=2025"
+  rest_port: 8000
+  log_level: INFO   # TRACE | DEBUG | INFO | WARNING | ERROR
+
+models:
+  qwen3-14b:
+    hf: OpenVINO/Qwen3-14B-int8-ov
+  qwen3-0.6b:
+    hf: OpenVINO/Qwen3-0.6B-int8-ov
+
+served:
+  - name: qwen3-spec
+    model: qwen3-14b
+    graph:
+      # Fields written into LLMCalculatorOptions in graph.pbtxt.
+      # The loader treats this section as a typed pass-through bag; it does not
+      # know what speculative decoding means, only how to set fields.
+      device: GPU
+      max_num_seqs: 256
+      enable_prefix_caching: true
+      cache_size: 0           # GB; 0 = dynamic
+      dynamic_split_fuse: true
+      # draft_model: qwen3-0.6b
+      # draft_device: CPU
+      # num_speculative_tokens: 7
