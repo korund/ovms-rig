@@ -8,11 +8,23 @@ so typos in YAML surface immediately as validation errors.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 LogLevel = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
+KvCachePrecision = Literal["u8", "f16"]
+Device = Literal["CPU", "GPU", "NPU"]
+# Task taxonomy as accepted by `ovms --pull --task`. Required per model
+# since pull cannot infer it from the HF repo.
+Task = Literal[
+    "text_generation",
+    "embeddings",
+    "rerank",
+    "image_generation",
+    "text2speech",
+    "speech2text",
+]
 
 
 class _Strict(BaseModel):
@@ -29,15 +41,55 @@ class Runtime(_Strict):
 
 class ModelIdentity(_Strict):
     hf: str
+    task: Task
     revision: str | None = None
+
+
+# Fields of `graph:` split by which stage consumes them.
+# Pull-bucket: passed as `--<name> <value>` to `ovms --pull` at fetch time.
+# Pbtxt-bucket: not pull flags; patched into graph.pbtxt at apply time.
+# Field names mirror ovms flag names verbatim (snake_case).
+GRAPH_PULL_FIELDS = frozenset({
+    "max_num_seqs",
+    "enable_prefix_caching",
+    "cache_size",
+    "dynamic_split_fuse",
+    "kv_cache_precision",
+})
+GRAPH_PBTXT_FIELDS = frozenset({
+    "device",
+    "draft_device",
+    "draft_model",
+})
+
+
+class Graph(_Strict):
+    # Pull-bucket: forwarded to `ovms --pull` as CLI flags.
+    max_num_seqs: int | None = Field(default=None, ge=1)
+    enable_prefix_caching: bool | None = None
+    # cache_size in GB; 0 means dynamic per OVMS convention.
+    cache_size: int | None = Field(default=None, ge=0)
+    dynamic_split_fuse: bool | None = None
+    kv_cache_precision: KvCachePrecision | None = None
+
+    # Pbtxt-only: patched into graph.pbtxt during apply.
+    device: Device | None = None
+    draft_device: Device | None = None
+    # Reference into ovms.yaml `models:` keys. Resolved to a filesystem path
+    # (draft_models_path in pbtxt) during apply, relative to the target's
+    # graph.pbtxt directory.
+    draft_model: str | None = None
+
+    def pull_flags(self) -> dict[str, object]:
+        return {name: getattr(self, name)
+                for name in GRAPH_PULL_FIELDS
+                if getattr(self, name) is not None}
 
 
 class ServedEntry(_Strict):
     name: str
     model: str
-    # Pass-through bag for LLMCalculatorOptions; the loader does not interpret
-    # individual fields. Validation of contents is OVMS's job at start time.
-    graph: dict[str, Any] = Field(default_factory=dict)
+    graph: Graph = Field(default_factory=Graph)
 
 
 class OvmsConfig(_Strict):

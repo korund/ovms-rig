@@ -65,10 +65,14 @@ def cmd_status(ctx: click.Context) -> None:
     sys.exit(status.run(ctx.obj))
 
 
-@main.command("fetch")
+@main.command(
+    "fetch",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
 @click.pass_context
 def cmd_fetch(ctx: click.Context) -> None:
-    """Pull missing models. Idempotent."""
+    """Pull missing models. Extra args are forwarded to `ovms --pull` verbatim."""
+    ctx.obj["extras"] = list(ctx.args)
     sys.exit(fetch.run(ctx.obj))
 
 

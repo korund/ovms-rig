@@ -20,8 +20,10 @@ runtime:
 models:
   main:
     hf: org/main-int8-ov
+    task: text_generation
   draft:
     hf: org/draft-int8-ov
+    task: text_generation
 
 served:
   - name: ep
@@ -30,7 +32,6 @@ served:
       device: GPU
       draft_model: draft
       draft_device: CPU
-      num_speculative_tokens: 7
 """
 
 LOCAL_YAML = """

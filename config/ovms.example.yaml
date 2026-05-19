@@ -18,8 +18,10 @@ runtime:
 models:
   qwen3-14b:
     hf: OpenVINO/Qwen3-14B-int8-ov
+    task: text_generation
   qwen3-0.6b:
     hf: OpenVINO/Qwen3-0.6B-int8-ov
+    task: text_generation
 
 served:
   - name: qwen3-spec

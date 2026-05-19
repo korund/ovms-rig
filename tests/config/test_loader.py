@@ -17,8 +17,10 @@ runtime:
 models:
   main:
     hf: org/main-int8-ov
+    task: text_generation
   draft:
     hf: org/draft-int8-ov
+    task: text_generation
 
 served:
   - name: ep
@@ -27,7 +29,6 @@ served:
       device: GPU
       draft_model: draft
       draft_device: CPU
-      num_speculative_tokens: 7
 """
 
 
@@ -40,7 +41,7 @@ def test_load_ovms_happy_path(tmp_path: Path) -> None:
     cfg = load_ovms(_write(tmp_path / "ovms.yaml", VALID_OVMS))
     assert cfg.runtime.rest_port == 8000
     assert set(cfg.models) == {"main", "draft"}
-    assert cfg.served[0].graph["draft_model"] == "draft"
+    assert cfg.served[0].graph.draft_model == "draft"
 
 
 def test_load_ovms_dangling_model_reference(tmp_path: Path) -> None:

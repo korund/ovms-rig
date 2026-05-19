@@ -13,7 +13,7 @@ NAME = "ovms binary"
 
 
 def check(cli_override: Path | None, local: LocalConfig) -> CheckResult:
-    resolved, source = _resolve(cli_override, local)
+    resolved, source = resolve(cli_override, local)
     if resolved is None:
         return CheckResult(
             name=NAME,
@@ -46,7 +46,7 @@ def check(cli_override: Path | None, local: LocalConfig) -> CheckResult:
     )
 
 
-def _resolve(cli_override: Path | None, local: LocalConfig) -> tuple[Path | None, str]:
+def resolve(cli_override: Path | None, local: LocalConfig) -> tuple[Path | None, str]:
     if cli_override is not None:
         return cli_override, "cli"
     if local.runtime.ovms_path is not None:
