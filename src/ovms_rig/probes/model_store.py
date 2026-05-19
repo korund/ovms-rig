@@ -1,0 +1,94 @@
+"""Check that the fetch destination device is reachable, and list which
+declared models are already materialized on disk.
+
+We deliberately do NOT verify directory layout inside the store -- that is
+fetch's job. We only confirm:
+  - if a destination path is configured, that the nearest existing ancestor
+    is on a reachable, writable device (so fetch can actually create the
+    leaf directory);
+  - which declared models, by name, already exist as subdirectories.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
+
+from ovms_rig.config import LocalConfig, OvmsConfig
+from ovms_rig.report import CheckResult
+
+DESTINATION = "model store destination"
+INVENTORY = "declared models on disk"
+
+
+def check_destination(local: LocalConfig) -> CheckResult:
+    path = local.models.repository_path
+    if path is None:
+        return CheckResult(
+            name=DESTINATION,
+            status="warn",
+            summary="not configured (local.yaml: models.repository_path)",
+            hint="fetch will refuse to run until a path is set",
+        )
+
+    anchor = _nearest_existing_ancestor(path)
+    if anchor is None:
+        return CheckResult(
+            name=DESTINATION,
+            status="error",
+            summary=f"no existing ancestor for {path} (device unreachable?)",
+            details={"path": str(path)},
+        )
+    if not _is_writable(anchor):
+        return CheckResult(
+            name=DESTINATION,
+            status="error",
+            summary=f"{anchor} is not writable",
+            details={"path": str(path), "anchor": str(anchor)},
+        )
+    return CheckResult(
+        name=DESTINATION,
+        status="ok",
+        summary=str(path),
+        details={"anchor": str(anchor), "leaf_exists": path.exists()},
+    )
+
+
+def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
+    store = local.models.repository_path
+    declared = sorted(ovms.models)
+    if store is None or not store.exists():
+        return CheckResult(
+            name=INVENTORY,
+            status="ok",
+            summary=f"0/{len(declared)} present (store not materialized)",
+            details={"declared": declared, "present": [], "missing": declared},
+            hint="run `ovms-rig fetch` to populate the store",
+        )
+    present = [name for name in declared if (store / name).is_dir()]
+    missing = [name for name in declared if name not in present]
+    summary = f"{len(present)}/{len(declared)} present"
+    hint = "run `ovms-rig fetch` to populate missing models" if missing else None
+    return CheckResult(
+        name=INVENTORY,
+        status="ok",
+        summary=summary,
+        details={"declared": declared, "present": present, "missing": missing},
+        hint=hint,
+    )
+
+
+def _nearest_existing_ancestor(path: Path) -> Path | None:
+    for candidate in [path, *path.parents]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _is_writable(directory: Path) -> bool:
+    try:
+        with tempfile.TemporaryFile(dir=directory):
+            return True
+    except OSError:
+        return False
