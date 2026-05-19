@@ -11,6 +11,7 @@ build/
 .uv/
 
 # Local machine config (paths, ports, ovms binary location)
+.SynologyWorkingDirectory/
 config/*
 !*.example.yaml
 
