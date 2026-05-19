@@ -1,0 +1,34 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# uv
+.uv/
+
+# Local machine config (paths, ports, ovms binary location)
+config/*
+!*.example.yaml
+
+# Tool state and backups
+.cache/
+.backup/
+
+# Pre-existing research artifacts kept locally, not part of the deploy tool
+.claude/
+scripts/
+validated/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.iml
+
+# OS
+Thumbs.db
+.DS_Store
