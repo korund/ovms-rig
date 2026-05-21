@@ -42,6 +42,28 @@ def test_graph_device_is_required() -> None:
         Graph(max_num_seqs=256)
 
 
+def test_graph_draft_model_without_device_rejected() -> None:
+    with pytest.raises(ValidationError, match="draft_model and draft_device"):
+        Graph(device="GPU", draft_model="draft")
+
+
+def test_graph_draft_device_without_model_rejected() -> None:
+    with pytest.raises(ValidationError, match="draft_model and draft_device"):
+        Graph(device="GPU", draft_device="CPU")
+
+
+def test_graph_both_draft_fields_set_ok() -> None:
+    g = Graph(device="GPU", draft_model="draft", draft_device="CPU")
+    assert g.draft_model == "draft"
+    assert g.draft_device == "CPU"
+
+
+def test_graph_no_draft_fields_ok() -> None:
+    g = Graph(device="GPU")
+    assert g.draft_model is None
+    assert g.draft_device is None
+
+
 def test_bucket_sets_are_disjoint_and_cover_all_fields() -> None:
     # Invariant: every Graph field belongs to exactly one bucket.
     declared = set(Graph.model_fields)

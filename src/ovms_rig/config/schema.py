@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LogLevel = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
 KvCachePrecision = Literal["u8", "f16"]
@@ -79,6 +79,22 @@ class Graph(_Strict):
     # (draft_models_path in pbtxt) during apply, relative to the target's
     # graph.pbtxt directory.
     draft_model: str | None = None
+
+    @model_validator(mode="after")
+    def _draft_fields_are_paired(self) -> Graph:
+        # draft_model and draft_device are a pair: speculative decoding needs
+        # both a draft model to run and a device to run it on. Either declare
+        # both or neither -- one without the other is always a mistake.
+        has_model = self.draft_model is not None
+        has_device = self.draft_device is not None
+        if has_model != has_device:
+            raise ValueError(
+                "draft_model and draft_device must be set together "
+                "(both define speculative decoding); "
+                f"got draft_model={self.draft_model!r}, "
+                f"draft_device={self.draft_device!r}"
+            )
+        return self
 
     def pull_flags(self) -> dict[str, object]:
         return {name: getattr(self, name)
