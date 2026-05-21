@@ -95,10 +95,14 @@ def cmd_apply(ctx: click.Context, dry_run: bool) -> None:
     sys.exit(apply.run(ctx.obj))
 
 
-@main.command("start")
+@main.command(
+    "start",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
 @click.pass_context
 def cmd_start(ctx: click.Context) -> None:
-    """Run preflight, then exec ovms in the foreground."""
+    """Run preflight, then start ovms in the foreground. Extra args forwarded to ovms."""
+    ctx.obj["extras"] = list(ctx.args)
     sys.exit(start.run(ctx.obj))
 
 
