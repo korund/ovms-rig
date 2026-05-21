@@ -64,6 +64,19 @@ def test_graph_no_draft_fields_ok() -> None:
     assert g.draft_device is None
 
 
+def test_graph_plugin_config_defaults_to_none() -> None:
+    g = Graph(device="GPU")
+    assert g.plugin_config is None
+
+
+def test_graph_plugin_config_accepts_string_dict() -> None:
+    g = Graph(
+        device="GPU",
+        plugin_config={"CACHE_DIR": "C:/cache", "PERFORMANCE_HINT": "LATENCY"},
+    )
+    assert g.plugin_config == {"CACHE_DIR": "C:/cache", "PERFORMANCE_HINT": "LATENCY"}
+
+
 def test_bucket_sets_are_disjoint_and_cover_all_fields() -> None:
     # Invariant: every Graph field belongs to exactly one bucket.
     declared = set(Graph.model_fields)

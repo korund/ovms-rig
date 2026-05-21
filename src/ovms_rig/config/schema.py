@@ -60,6 +60,7 @@ GRAPH_PBTXT_FIELDS = frozenset({
     "device",
     "draft_device",
     "draft_model",
+    "plugin_config",
 })
 
 
@@ -79,6 +80,11 @@ class Graph(_Strict):
     # (draft_models_path in pbtxt) during apply, relative to the target's
     # graph.pbtxt directory.
     draft_model: str | None = None
+    # OpenVINO device properties forwarded to the LLM pipeline via
+    # LLMCalculatorOptions.plugin_config (serialized as JSON in graph.pbtxt).
+    # Generic key/value bag -- we do not validate individual keys (CACHE_DIR,
+    # PERFORMANCE_HINT, NUM_STREAMS, ...) since the set is plugin-defined.
+    plugin_config: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def _draft_fields_are_paired(self) -> Graph:

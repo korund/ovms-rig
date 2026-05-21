@@ -38,3 +38,12 @@ served:
       # draft_model: qwen3-0.6b
       # draft_device: CPU
       # num_speculative_tokens: 7
+      # OpenVINO device properties forwarded to the LLM pipeline. ovms 2026.1
+      # does not propagate the global --cache_dir to the LLM continuous-batch
+      # pipeline, so CACHE_DIR must travel via plugin_config. The loader
+      # injects local.runtime.cache_dir here automatically unless you set
+      # CACHE_DIR explicitly below. Forward slashes are required.
+      plugin_config:
+        KV_CACHE_PRECISION: u8
+      #   CACHE_DIR: C:/ovms/cache
+      #   PERFORMANCE_HINT: LATENCY

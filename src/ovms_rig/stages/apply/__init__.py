@@ -101,7 +101,9 @@ def run(ctx: dict) -> int:
             draft_dir = model_dir(store, draft_identity.hf)
             draft_rel = relative_posix(target_dir, draft_dir)
 
-        fields = collect_pbtxt_fields(entry.graph, draft_rel)
+        fields = collect_pbtxt_fields(
+            entry.graph, draft_rel, cache_dir=local.runtime.cache_dir,
+        )
 
         # Compute the destination for this pbtxt (live or build/).
         if dry_run:

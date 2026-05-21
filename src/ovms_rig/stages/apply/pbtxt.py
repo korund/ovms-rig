@@ -20,6 +20,7 @@ formatting to _fmt().
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Sequence
@@ -32,21 +33,66 @@ _BLOCK_OPEN = re.compile(
 )
 
 # Matches a key: value, line inside the block.
-# Group 1 = leading whitespace, Group 2 = key, Group 3 = value (bare or
-# double-quoted), Group 4 = optional comma, Group 5 = trailing whitespace.
+# Group 1 = leading whitespace, Group 2 = key, Group 3 = ': ' separator,
+# Group 4 = value (double-quoted, single-quoted, or bare), Group 5 = optional
+# comma and trailing whitespace/comment.
+#
+# Single-quoted values are needed for fields like `plugin_config` whose value
+# is a JSON document (contains double quotes and commas); wrapping in single
+# quotes lets us keep the whole JSON as one regex-captured token without
+# tripping the bare-value comma terminator.
 _FIELD_RE = re.compile(
-    r'^(\s*)(\w+)(\s*:\s*)("[^"]*"|[^,\n#]+?)(,?\s*(?:#[^\n]*)?)$',
+    r"^(\s*)(\w+)(\s*:\s*)(\"[^\"]*\"|'[^']*'|[^,\n#]+?)(,?\s*(?:#[^\n]*)?)$",
     re.MULTILINE,
 )
 
 
+class _Literal(str):
+    """Marker: value already formatted as a pbtxt literal; emit as-is.
+
+    Used for `plugin_config`, whose value is a JSON document wrapped in
+    single quotes (so it survives the field regex intact).
+    """
+
+
 def _fmt(value: object) -> str:
     """Format a Python value as a pbtxt literal."""
+    if isinstance(value, _Literal):
+        return str(value)
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
         return f'"{value}"'
     return str(value)
+
+
+def _normalize_plugin_config_value(value: object) -> str:
+    """Convert backslashes to forward-slashes for path-like plugin_config values.
+
+    OVMS' pbtxt-to-JSON parser interprets backslashes inside the embedded JSON
+    as escape sequences (`\\C` is not a valid JSON escape), so plugin_config
+    paths must use forward slashes even on Windows. OpenVINO Core accepts
+    forward-slash Windows paths.
+    """
+    if isinstance(value, Path):
+        return str(value).replace("\\", "/")
+    if isinstance(value, str) and "\\" in value:
+        return value.replace("\\", "/")
+    return str(value)
+
+
+def format_plugin_config(values: dict[str, object]) -> _Literal:
+    """Serialize a plugin_config dict to the pbtxt literal `'<json>'`.
+
+    Wrapped in single quotes so the embedded JSON (which contains double
+    quotes) survives the pbtxt field-line regex as a single token. All
+    path-like values are forced to forward slashes before serialization --
+    see _normalize_plugin_config_value.
+    """
+    normalized = {k: _normalize_plugin_config_value(v) for k, v in values.items()}
+    # sort_keys for deterministic output (idempotent apply).
+    payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    return _Literal(f"'{payload}'")
 
 
 def _find_block(text: str) -> tuple[int, int] | None:
@@ -140,12 +186,18 @@ def patch_file(path: Path, fields: dict[str, object]) -> str:
 def collect_pbtxt_fields(
     entry_graph,  # config.schema.Graph instance
     draft_models_path: str | None,
+    cache_dir: Path | None = None,
 ) -> dict[str, object]:
     """Build the dict of fields to patch into LLMCalculatorOptions.
 
-    Covers device, draft_device, and draft_models_path.
-    draft_models_path is the POSIX-relative path from the target model dir to
-    the draft model dir, pre-computed by the caller.
+    Covers device, draft_device, draft_models_path, and plugin_config.
+
+    cache_dir bridge: ovms 2026.1 LLM continuous-batching pipeline does not
+    forward the global `--cache_dir` flag to the device plugin (the LLM
+    servable initializer skips `set_property(ov::cache_dir)`). We work around
+    by injecting CACHE_DIR via plugin_config, which the LLMCalculator does
+    propagate. If the user has already set plugin_config.CACHE_DIR explicitly,
+    their value wins.
     """
     fields: dict[str, object] = {}
     if entry_graph.device is not None:
@@ -154,4 +206,10 @@ def collect_pbtxt_fields(
         fields["draft_device"] = entry_graph.draft_device
     if draft_models_path is not None:
         fields["draft_models_path"] = draft_models_path
+
+    plugin_config: dict[str, object] = dict(entry_graph.plugin_config or {})
+    if cache_dir is not None and "CACHE_DIR" not in plugin_config:
+        plugin_config["CACHE_DIR"] = cache_dir
+    if plugin_config:
+        fields["plugin_config"] = format_plugin_config(plugin_config)
     return fields
