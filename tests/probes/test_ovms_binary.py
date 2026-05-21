@@ -12,7 +12,7 @@ from ovms_rig.config import LocalConfig, LocalModels, LocalRuntime
 def _local(ovms_path: Path | None = None) -> LocalConfig:
     return LocalConfig(
         runtime=LocalRuntime(ovms_path=ovms_path),
-        models=LocalModels(),
+        models=LocalModels(repository_path=Path("C:/unused-by-binary-probe")),
     )
 
 

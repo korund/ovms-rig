@@ -17,7 +17,7 @@ GRAPH_PBTXT = "graph.pbtxt"
 
 def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
     store = local.models.repository_path
-    if store is None or not store.exists():
+    if not store.exists():
         return CheckResult(
             name=NAME,
             status="ok",

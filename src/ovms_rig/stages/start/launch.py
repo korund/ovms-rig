@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ovms_rig import log as logging_setup
-from ovms_rig.config import ConfigError, LocalConfig, load_local, load_ovms
+from ovms_rig.config import ConfigError, load_local, load_ovms
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.start.precheck import run as precheck_run
@@ -34,7 +34,7 @@ def run(ctx: dict) -> int:
 
     try:
         ovms_cfg = load_ovms(config_path)
-        local = load_local(local_path) if local_path.exists() else LocalConfig()
+        local = load_local(local_path)
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1
@@ -48,12 +48,6 @@ def run(ctx: dict) -> int:
         return 1
 
     store = local.models.repository_path
-    if store is None:
-        logger.error(
-            "model store path not configured (local.yaml: models.repository_path)"
-        )
-        return 1
-
     config_json = store / "config.json"
     env = build_env(binary.parent)
 

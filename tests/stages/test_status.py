@@ -97,11 +97,13 @@ def test_status_reports_missing_models_as_ok_with_hint(rig: dict) -> None:
     assert "fetch" in result.output
 
 
-def test_status_warns_when_repository_path_unset(tmp_path: Path) -> None:
+def test_status_fails_when_repository_path_unset(tmp_path: Path) -> None:
+    # repository_path is required by schema, so omitting it surfaces at
+    # config-load time rather than as a downstream warning.
     cfg = tmp_path / "ovms.yaml"
     loc = tmp_path / "local.yaml"
     cfg.write_text(OVMS_YAML.format(port=_free_port()), encoding="utf-8")
-    loc.write_text("runtime:\n  ovms_path: null\nmodels:\n  repository_path: null\n",
+    loc.write_text("runtime:\n  ovms_path: null\nmodels: {}\n",
                    encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(
@@ -114,5 +116,6 @@ def test_status_warns_when_repository_path_unset(tmp_path: Path) -> None:
         ],
         catch_exceptions=False,
     )
-    assert result.exit_code == 0
-    assert "WARN" in result.output
+    assert result.exit_code == 1
+    assert "config load failed" in result.output
+    assert "repository_path" in result.output

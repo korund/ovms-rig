@@ -122,9 +122,12 @@ class LocalRuntime(_Strict):
 
 
 class LocalModels(_Strict):
-    repository_path: Path | None = None
+    # Required: every downstream stage (fetch, apply, start) needs a concrete
+    # store path. Making it optional in schema and erroring later caused the
+    # failure to surface mid-pipeline instead of at config load.
+    repository_path: Path
 
 
 class LocalConfig(_Strict):
     runtime: LocalRuntime = Field(default_factory=LocalRuntime)
-    models: LocalModels = Field(default_factory=LocalModels)
+    models: LocalModels

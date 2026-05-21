@@ -149,11 +149,12 @@ def test_fetch_forwards_extra_args_to_pull(
 
 
 def test_fetch_errors_when_store_path_unset(tmp_path: Path, recorder: Recorder) -> None:
+    # repository_path missing now fails at config load, before any pull runs.
     cfg = tmp_path / "ovms.yaml"
     loc = tmp_path / "local.yaml"
     cfg.write_text(OVMS_YAML, encoding="utf-8")
     loc.write_text(
-        "runtime:\n  ovms_path: null\nmodels:\n  repository_path: null\n",
+        "runtime:\n  ovms_path: null\nmodels: {}\n",
         encoding="utf-8",
     )
     runner = CliRunner()

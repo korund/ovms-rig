@@ -8,6 +8,8 @@ runtime:
   cache_dir: null
 
 models:
-  # Where the loader should place fetched HF models. If omitted, the standard
-  # huggingface_hub cache is used.
-  repository_path: null
+  # Where the loader should place fetched HF models. Required: every stage
+  # (fetch, apply, start) needs a concrete path, so the schema rejects local
+  # configs without it. Set this to the absolute path of your model store
+  # before running the tool, e.g.:
+  #   repository_path: C:/ovms/models

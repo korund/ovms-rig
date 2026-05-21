@@ -23,15 +23,8 @@ INVENTORY = "declared models on disk"
 
 
 def check_destination(local: LocalConfig) -> CheckResult:
+    # repository_path is required by schema; no None-branch needed here.
     path = local.models.repository_path
-    if path is None:
-        return CheckResult(
-            name=DESTINATION,
-            status="warn",
-            summary="not configured (local.yaml: models.repository_path)",
-            hint="fetch will refuse to run until a path is set",
-        )
-
     anchor = _nearest_existing_ancestor(path)
     if anchor is None:
         return CheckResult(
@@ -58,7 +51,7 @@ def check_destination(local: LocalConfig) -> CheckResult:
 def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
     store = local.models.repository_path
     declared = sorted(ovms.models)
-    if store is None or not store.exists():
+    if not store.exists():
         return CheckResult(
             name=INVENTORY,
             status="ok",

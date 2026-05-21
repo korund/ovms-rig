@@ -72,7 +72,14 @@ def test_load_local_missing_file(tmp_path: Path) -> None:
         load_local(tmp_path / "absent.yaml")
 
 
-def test_load_local_empty_file_yields_defaults(tmp_path: Path) -> None:
-    cfg = load_local(_write(tmp_path / "local.yaml", ""))
+def test_load_local_minimal_yields_defaults(tmp_path: Path) -> None:
+    # repository_path is required; everything else falls back to defaults.
+    body = "models:\n  repository_path: C:/store\n"
+    cfg = load_local(_write(tmp_path / "local.yaml", body))
     assert cfg.runtime.ovms_path is None
-    assert cfg.models.repository_path is None
+    assert str(cfg.models.repository_path).replace("\\", "/") == "C:/store"
+
+
+def test_load_local_rejects_missing_repository_path(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="schema validation failed"):
+        load_local(_write(tmp_path / "local.yaml", ""))
