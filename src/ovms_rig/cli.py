@@ -76,7 +76,10 @@ def cmd_fetch(ctx: click.Context) -> None:
     sys.exit(fetch.run(ctx.obj))
 
 
-@main.command("apply")
+@main.command(
+    "apply",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
 @click.option(
     "--dry-run",
     "dry_run",
@@ -88,6 +91,7 @@ def cmd_fetch(ctx: click.Context) -> None:
 def cmd_apply(ctx: click.Context, dry_run: bool) -> None:
     """Back up live files into .backup/<timestamp>/ and apply the declaration to them."""
     ctx.obj["dry_run"] = dry_run
+    ctx.obj["extras"] = list(ctx.args)
     sys.exit(apply.run(ctx.obj))
 
 
