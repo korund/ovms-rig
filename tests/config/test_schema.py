@@ -36,6 +36,12 @@ def test_graph_rejects_unknown_field() -> None:
         Graph(draft_source_model="org/draft")
 
 
+def test_graph_device_is_required() -> None:
+    # device is mandatory -- ovms cannot start without a target device.
+    with pytest.raises(ValidationError, match="device"):
+        Graph(max_num_seqs=256)
+
+
 def test_bucket_sets_are_disjoint_and_cover_all_fields() -> None:
     # Invariant: every Graph field belongs to exactly one bucket.
     declared = set(Graph.model_fields)

@@ -73,7 +73,7 @@ class Graph(_Strict):
     kv_cache_precision: KvCachePrecision | None = None
 
     # Pbtxt-only: patched into graph.pbtxt during apply.
-    device: Device | None = None
+    device: Device  # required; ovms cannot start without a target device
     draft_device: Device | None = None
     # Reference into ovms.yaml `models:` keys. Resolved to a filesystem path
     # (draft_models_path in pbtxt) during apply, relative to the target's
@@ -89,7 +89,7 @@ class Graph(_Strict):
 class ServedEntry(_Strict):
     name: str
     model: str
-    graph: Graph = Field(default_factory=Graph)
+    graph: Graph
 
 
 class OvmsConfig(_Strict):
