@@ -28,20 +28,28 @@ _LEVELS = {
 }
 
 
+_OWN_HANDLERS: list[logging.Handler] = []
+
+
 def configure(level_name: str) -> None:
     """Install a single stderr handler at the given level.
 
     Always rebinds the handler to the current sys.stderr so repeat calls (eg.
-    inside test runners that capture stderr) take effect.
+    inside test runners that capture stderr) take effect. Only removes
+    handlers this module installed previously -- foreign handlers (eg. pytest
+    caplog's LogCaptureHandler) are left in place.
     """
     import sys
 
     level = _LEVELS[level_name]
     root = logging.getLogger()
-    for h in list(root.handlers):
-        root.removeHandler(h)
+    for h in list(_OWN_HANDLERS):
+        if h in root.handlers:
+            root.removeHandler(h)
+        _OWN_HANDLERS.remove(h)
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     handler.setLevel(level)
     root.addHandler(handler)
+    _OWN_HANDLERS.append(handler)
     root.setLevel(level)
