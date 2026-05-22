@@ -19,7 +19,6 @@ from ovms_rig.cli import main
 
 OVMS_YAML = """
 runtime:
-  ovms_version: ">=2025"
   rest_port: 8000
   log_level: DEBUG
 

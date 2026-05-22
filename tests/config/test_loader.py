@@ -10,7 +10,6 @@ from ovms_rig.config import ConfigError, load_local, load_ovms
 
 VALID_OVMS = """
 runtime:
-  ovms_version: ">=2025"
   rest_port: 8000
   log_level: INFO
 

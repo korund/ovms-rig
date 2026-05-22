@@ -34,7 +34,6 @@ class _Strict(BaseModel):
 # ----- ovms.yaml -----
 
 class Runtime(_Strict):
-    ovms_version: str
     rest_port: int = Field(ge=1, le=65535)
     log_level: LogLevel = "INFO"
 

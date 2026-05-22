@@ -11,7 +11,6 @@
 # tool produces a plain single-model setup, no special-casing.
 
 runtime:
-  ovms_version: ">=2025"
   rest_port: 8000
   log_level: INFO   # TRACE | DEBUG | INFO | WARNING | ERROR
 

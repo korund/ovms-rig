@@ -30,7 +30,7 @@ from ovms_rig.stages.start.signals import GRACEFUL_TIMEOUT_S, _wait_or_kill
 # ---------------------------------------------------------------------------
 
 def _runtime(rest_port: int = 8000, log_level: str = "INFO") -> Runtime:
-    return Runtime(ovms_version=">=2025", rest_port=rest_port, log_level=log_level)
+    return Runtime(rest_port=rest_port, log_level=log_level)
 
 
 def _local_runtime(
@@ -219,7 +219,6 @@ def test_posix_sigint_calls_send_signal():
 
 OVMS_YAML = """
 runtime:
-  ovms_version: ">=2025"
   rest_port: 8765
   log_level: DEBUG
 
