@@ -1,15 +1,13 @@
-"""Apply stage: patch graph.pbtxt + generation_config.json + register config.json.
+"""Apply stage: copy pristine graph.pbtxt to sibling + patch + register.
 
 Steps per served entry:
 1. Resolve target model directory (store/<hf_org>/<hf_repo>).
-2. Warn if pbtxt mtime is newer than last-apply marker.
-3. Backup live files (unless dry-run).
-4. Patch graph.pbtxt fields from declaration (device, draft_device,
-   draft_models_path).
-5. Write patched pbtxt to live store or build/ (dry-run).
-6. Merge generation_config.json overrides if declared on model.
-7. Register endpoint via `ovms --add_to_config` (or emulate for dry-run).
-8. Update apply marker (live run only).
+2. Read pristine graph.pbtxt (never mutated).
+3. Create sibling copy graph.<served_name>.pbtxt.
+4. Patch sibling copy (device, draft_device, draft_models_path).
+5. Merge generation_config.json overrides if declared on model.
+6. Register endpoint via direct config.json JSON write (not ovms CLI).
+7. Backup config.json after registration (live run only).
 """
 
 from __future__ import annotations
@@ -27,16 +25,14 @@ from ovms_rig.config import (
 )
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
-from ovms_rig.stages.apply import marker as apply_marker
 from ovms_rig.stages.apply.generation import merge as merge_generation
 from ovms_rig.stages.apply.paths import model_dir, relative_posix
 from ovms_rig.stages.apply.pbtxt import collect_pbtxt_fields, patch
-from ovms_rig.stages.apply.registry import add_to_config
+from ovms_rig.stages.apply.registry import register_mediapipe_entry
 
 logger = logging.getLogger(__name__)
 
 _BUILD_DIR = Path("build")
-_BACKUP_ROOT = Path(".backup")
 
 
 def run(ctx: dict) -> int:
@@ -67,7 +63,6 @@ def run(ctx: dict) -> int:
     store = local.models.repository_path
 
     env = build_env(binary.parent)
-    marker = apply_marker.load()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     failures: list[str] = []
 
@@ -83,17 +78,14 @@ def run(ctx: dict) -> int:
             failures.append(entry.name)
             continue
 
-        pbtxt_path = target_dir / "graph.pbtxt"
-        if not pbtxt_path.exists():
+        pristine_pbtxt = target_dir / "graph.pbtxt"
+        if not pristine_pbtxt.exists():
             logger.error(
                 "[apply] %s: graph.pbtxt not found at %s",
-                entry.name, pbtxt_path,
+                entry.name, pristine_pbtxt,
             )
             failures.append(entry.name)
             continue
-
-        # Step 2: warn if pbtxt was regenerated since last apply.
-        apply_marker.warn_if_stale(entry.model, pbtxt_path, marker)
 
         # Resolve draft path if declared.
         draft_rel: str | None = None
@@ -106,27 +98,32 @@ def run(ctx: dict) -> int:
             entry.graph, draft_rel, cache_dir=local.runtime.cache_dir,
         )
 
-        # Compute the destination for this pbtxt (live or build/).
+        # Compute destination path for sibling-copy (live or build/).
+        # Sibling naming: graph.<served_name>.pbtxt in the same directory as pristine.
         if dry_run:
-            dest_pbtxt = _BUILD_DIR / model_identity.hf / "graph.pbtxt"
+            sibling_pbtxt = _BUILD_DIR / model_identity.hf / f"graph.{entry.name}.pbtxt"
         else:
-            dest_pbtxt = pbtxt_path
+            sibling_pbtxt = target_dir / f"graph.{entry.name}.pbtxt"
 
-        # Step 3: backup before any write (live run only).
-        if not dry_run:
-            _backup_file(pbtxt_path, timestamp)
-
-        # Step 4+5: patch and write.
+        # Read pristine (never mutate).
         try:
-            new_content = patch(pbtxt_path.read_text(encoding="utf-8"), fields)
+            pristine_content = pristine_pbtxt.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.error("[apply] %s: failed to read pristine graph.pbtxt: %s", entry.name, exc)
+            failures.append(entry.name)
+            continue
+
+        # Patch the pristine content (goes to sibling, not to pristine itself).
+        try:
+            patched_content = patch(pristine_content, fields)
         except (ValueError, OSError) as exc:
             logger.error("[apply] %s: pbtxt patch failed: %s", entry.name, exc)
             failures.append(entry.name)
             continue
 
-        dest_pbtxt.parent.mkdir(parents=True, exist_ok=True)
-        dest_pbtxt.write_text(new_content, encoding="utf-8")
-        logger.info("[apply] %s: graph.pbtxt written to %s", entry.name, dest_pbtxt)
+        sibling_pbtxt.parent.mkdir(parents=True, exist_ok=True)
+        sibling_pbtxt.write_text(patched_content, encoding="utf-8")
+        logger.info("[apply] %s: graph.%s.pbtxt written to %s", entry.name, entry.name, sibling_pbtxt)
 
         # Handle generation_config.json if overrides are declared on the entry.
         overrides = entry.generation
@@ -169,44 +166,31 @@ def run(ctx: dict) -> int:
                 entry.name, dest_genconfig,
             )
 
-        # Step 7: register in config.json.
+        # Step 6: register in config.json via direct JSON write.
         if dry_run:
             config_json_path = _BUILD_DIR / "config.json"
         else:
             config_json_path = store / "config.json"
-            _backup_file(config_json_path, timestamp)
 
         config_json_path.parent.mkdir(parents=True, exist_ok=True)
-        # For dry-run, if build/config.json doesn't yet exist, seed it so
-        # ovms --add_to_config has a file to update.
-        if dry_run and not config_json_path.exists():
-            if (store / "config.json").exists():
-                shutil.copy2(store / "config.json", config_json_path)
 
-        # model_path for --add_to_config: OVMS expects the absolute path to
-        # the model directory (containing graph.pbtxt).
-        model_path_for_registry = (
-            dest_pbtxt.parent if dry_run else target_dir
-        )
-        rc = add_to_config(
-            binary=binary,
-            env=env,
-            config_path=config_json_path,
-            model_name=entry.name,
-            model_path=model_path_for_registry.resolve(),
-            extras=extras,
-        )
-        if rc != 0:
+        # Backup config.json before mutation (live run only).
+        if not dry_run and config_json_path.exists():
+            _backup_file(config_json_path, timestamp)
+
+        # Register mediapipe entry with sibling-copy graph path.
+        # graph_path is relative from base_path (model directory).
+        try:
+            register_mediapipe_entry(
+                config_path=config_json_path,
+                entry_name=entry.name,
+                base_path=target_dir.resolve(),
+                graph_path=f"graph.{entry.name}.pbtxt",
+            )
+        except (OSError, ValueError) as exc:
+            logger.error("[apply] %s: failed to register in config.json: %s", entry.name, exc)
             failures.append(entry.name)
             continue
-
-        # Step 7: update marker (live run only).
-        if not dry_run:
-            apply_marker.update(entry.model, pbtxt_path, marker)
-
-    # Persist marker after all entries (live run only).
-    if not dry_run and not failures:
-        apply_marker.save(marker)
 
     if failures:
         logger.error("apply failed for: %s", ", ".join(failures))
@@ -218,14 +202,13 @@ def run(ctx: dict) -> int:
 
 
 def _backup_file(src: Path, timestamp: str) -> None:
-    """Copy src into .backup/<timestamp>/<relative_to_cwd> if src exists."""
+    """Create a backup of src file with suffix: src.bak.<timestamp>.
+
+    Backup stored next to original (same directory).
+    timestamp format: YYYYMMDDTHHMMSS (UTC, no colons).
+    """
     if not src.exists():
         return
-    try:
-        rel = src.relative_to(Path.cwd())
-    except ValueError:
-        rel = Path(*src.parts[-2:])  # fallback: last two segments
-    dest = _BACKUP_ROOT / timestamp / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest = src.parent / f"{src.name}.bak.{timestamp}"
     shutil.copy2(src, dest)
     logger.debug("[backup] %s -> %s", src, dest)

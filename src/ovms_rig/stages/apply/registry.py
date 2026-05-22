@@ -1,76 +1,77 @@
-"""Wrap `ovms --add_to_config` for registering served endpoints.
+"""Direct manipulation of config.json to register mediapipe_config_list entries.
 
-Empirical findings (tested against OVMS 2026.1.0.72cc0624):
-- Re-running `ovms --add_to_config` for an already-registered model name
-  is a NO-OP: ovms returns exit code 0 and does not modify config.json.
-  The entry is identified by the `name` field inside config.json's `model_config_list`.
-- `ovms --add_to_config --config_path <path>` works: ovms reads and writes
-  the specified config file regardless of its location. This is the mechanism
-  used for dry-run: we point it at build/config.json instead of the live file.
-- When config.json does not yet exist at the given path, ovms creates it.
-- There is no error or warning on re-add; idempotency is baked in.
+Instead of shelling out to `ovms --add_to_config`, this module reads/writes
+the config.json directly and upserts mediapipe_config_list entries.
 
-Therefore: no pre-check needed for existing entries. Just call --add_to_config
-and let ovms handle it.
+Entry structure:
+  {
+    "name": "<served_entry.name>",
+    "base_path": "<absolute_path_to_model_directory>",
+    "graph_path": "graph.<served_name>.pbtxt"  (relative from base_path)
+  }
+
+Idempotency: if an entry with the same name already exists, it is updated
+in-place rather than duplicated.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def add_to_config(
-    binary: Path,
-    env: dict[str, str],
+def register_mediapipe_entry(
     config_path: Path,
-    model_name: str,
-    model_path: Path,
-    extras: list[str],
-) -> int:
-    """Call `ovms --add_to_config` to register model_name -> model_path.
+    entry_name: str,
+    base_path: Path,
+    graph_path: str,
+) -> None:
+    """Register a mediapipe_config_list entry in config.json.
 
-    config_path: the config.json to create/update (may be in build/ for dry-run).
-    Returns the subprocess exit code.
+    config_path: path to config.json (created if missing).
+    entry_name: name of the served endpoint.
+    base_path: absolute path to model directory.
+    graph_path: relative path from base_path to the graph file
+                (typically "graph.<served_name>.pbtxt").
+
+    Raises OSError if file I/O fails, ValueError if JSON is malformed.
     """
-    args = [
-        str(binary),
-        "--add_to_config",
-        str(config_path),
-        "--model_name", model_name,
-        "--model_path", str(model_path),
-    ] + extras
+    # Load existing config or start with empty dict.
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in {config_path}: {exc}") from exc
+    else:
+        data = {}
 
-    logger.debug("[registry] cmd: %s", " ".join(args))
-    proc = subprocess.run(args, env=env, check=False, capture_output=True, text=True)
-    if proc.stdout:
-        logger.debug("[registry] stdout: %s", proc.stdout.rstrip())
-    if proc.stderr:
-        logger.debug("[registry] stderr: %s", proc.stderr.rstrip())
-    if proc.returncode != 0:
-        logger.error(
-            "[registry] ovms --add_to_config failed (rc=%d) for model '%s'",
-            proc.returncode, model_name,
-        )
-    return proc.returncode
+    # Ensure mediapipe_config_list exists.
+    if "mediapipe_config_list" not in data:
+        data["mediapipe_config_list"] = []
 
+    entries = data["mediapipe_config_list"]
 
-def is_registered(config_path: Path, model_name: str) -> bool:
-    """Return True if model_name already appears in config.json.
+    # Find and update or append.
+    found = False
+    for entry in entries:
+        if entry.get("name") == entry_name:
+            entry["base_path"] = str(base_path)
+            entry["graph_path"] = graph_path
+            found = True
+            break
 
-    Used only for logging; ovms handles idempotency natively.
-    """
-    if not config_path.exists():
-        return False
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        entries = data.get("model_config_list", [])
-        return any(
-            e.get("config", {}).get("name") == model_name for e in entries
-        )
-    except (json.JSONDecodeError, KeyError):
-        return False
+    if not found:
+        entries.append({
+            "name": entry_name,
+            "base_path": str(base_path),
+            "graph_path": graph_path,
+        })
+
+    # Write back with nice formatting.
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    logger.debug("[registry] registered mediapipe entry: name=%s, base_path=%s, graph_path=%s",
+                 entry_name, base_path, graph_path)
