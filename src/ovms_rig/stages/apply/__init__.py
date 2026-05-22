@@ -1,4 +1,4 @@
-"""Apply stage: patch graph.pbtxt + register config.json from the declaration.
+"""Apply stage: patch graph.pbtxt + generation_config.json + register config.json.
 
 Steps per served entry:
 1. Resolve target model directory (store/<hf_org>/<hf_repo>).
@@ -7,8 +7,9 @@ Steps per served entry:
 4. Patch graph.pbtxt fields from declaration (device, draft_device,
    draft_models_path).
 5. Write patched pbtxt to live store or build/ (dry-run).
-6. Register endpoint via `ovms --add_to_config` (or emulate for dry-run).
-7. Update apply marker (live run only).
+6. Merge generation_config.json overrides if declared on model.
+7. Register endpoint via `ovms --add_to_config` (or emulate for dry-run).
+8. Update apply marker (live run only).
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ from pathlib import Path
 from ovms_rig import log as logging_setup
 from ovms_rig.config import (
     ConfigError,
-    OvmsConfig,
     load_local,
     load_ovms,
 )
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.apply import marker as apply_marker
+from ovms_rig.stages.apply.generation import merge as merge_generation
 from ovms_rig.stages.apply.paths import model_dir, relative_posix
 from ovms_rig.stages.apply.pbtxt import collect_pbtxt_fields, patch
 from ovms_rig.stages.apply.registry import add_to_config
@@ -127,7 +128,48 @@ def run(ctx: dict) -> int:
         dest_pbtxt.write_text(new_content, encoding="utf-8")
         logger.info("[apply] %s: graph.pbtxt written to %s", entry.name, dest_pbtxt)
 
-        # Step 6: register in config.json.
+        # Handle generation_config.json if overrides are declared on the entry.
+        overrides = entry.generation
+        if overrides:
+            genconfig_path = target_dir / "generation_config.json"
+            if not genconfig_path.exists():
+                logger.error(
+                    "[apply] %s: generation_config.json not found at %s",
+                    entry.name, genconfig_path,
+                )
+                failures.append(entry.name)
+                continue
+
+            # Compute destination (live or build/).
+            if dry_run:
+                dest_genconfig = _BUILD_DIR / model_identity.hf / "generation_config.json"
+            else:
+                dest_genconfig = genconfig_path
+
+            # Backup before write (live run only).
+            if not dry_run:
+                _backup_file(genconfig_path, timestamp)
+
+            # Merge and write.
+            try:
+                existing_text = genconfig_path.read_text(encoding="utf-8")
+                new_genconfig = merge_generation(existing_text, overrides)
+            except (ValueError, OSError) as exc:
+                logger.error(
+                    "[apply] %s: generation_config merge failed: %s",
+                    entry.name, exc,
+                )
+                failures.append(entry.name)
+                continue
+
+            dest_genconfig.parent.mkdir(parents=True, exist_ok=True)
+            dest_genconfig.write_text(new_genconfig, encoding="utf-8")
+            logger.info(
+                "[apply] %s: generation_config.json written to %s",
+                entry.name, dest_genconfig,
+            )
+
+        # Step 7: register in config.json.
         if dry_run:
             config_json_path = _BUILD_DIR / "config.json"
         else:

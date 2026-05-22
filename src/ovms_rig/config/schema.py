@@ -8,7 +8,7 @@ so typos in YAML surface immediately as validation errors.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -111,6 +111,10 @@ class ServedEntry(_Strict):
     name: str
     model: str
     graph: Graph
+    # Overrides merged into the model's generation_config.json at apply time.
+    # Lives on the served entry (not the model) because it is a deployment-level
+    # override, like graph.device. Passthrough dict; values are not validated.
+    generation: dict[str, int | float | bool | str | list[Any]] | None = None
 
 
 class OvmsConfig(_Strict):

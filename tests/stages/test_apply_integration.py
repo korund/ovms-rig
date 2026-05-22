@@ -67,6 +67,16 @@ GRAPH_PBTXT = """\
     }
 """
 
+# Sample generation_config.json for a HuggingFace model.
+GENERATION_CONFIG = """\
+{
+  "architectures": ["QwenForCausalLM"],
+  "temperature": 1.0,
+  "top_p": 0.999,
+  "max_length": 4096
+}
+"""
+
 
 @dataclass
 class Recorder:
@@ -271,3 +281,279 @@ class TestMtimeWarning:
         assert any("regenerated" in t or "re-applying" in t for t in warning_texts), (
             f"Expected stale-pbtxt warning, got: {warning_texts}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Generation config tests
+# ---------------------------------------------------------------------------
+
+class TestGenerationConfig:
+    def test_generation_config_merge_in_live_run(self, tmp_path: Path,
+                                                 recorder: Recorder,
+                                                 monkeypatch: pytest.MonkeyPatch):
+        """Model with generation overrides merges into generation_config.json."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        # Create model directories with graph.pbtxt and generation_config.json.
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+        (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+
+        # Config with generation overrides on the model.
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+models:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+served:
+  - name: ep
+    model: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.5
+      top_p: 0.95
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "apply",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+        # generation_config.json must exist and contain the overrides.
+        live_genconfig = model_dir / "generation_config.json"
+        assert live_genconfig.exists()
+        content = json.loads(live_genconfig.read_text(encoding="utf-8"))
+        assert content["temperature"] == 0.5
+        assert content["top_p"] == 0.95
+        # Original keys must be preserved.
+        assert content["architectures"] == ["QwenForCausalLM"]
+
+    def test_generation_config_backup_created(self, tmp_path: Path,
+                                              recorder: Recorder,
+                                              monkeypatch: pytest.MonkeyPatch):
+        """Backup of generation_config.json is created on live run."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+        (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+models:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+served:
+  - name: ep
+    model: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.3
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "apply",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+        # Backup must exist.
+        backup_root = tmp_path / ".backup"
+        genconfig_backups = list(backup_root.rglob("generation_config.json"))
+        assert len(genconfig_backups) >= 1
+
+    def test_generation_config_missing_file_error(self, tmp_path: Path,
+                                                  recorder: Recorder,
+                                                  monkeypatch: pytest.MonkeyPatch):
+        """Apply fails when generation_config.json is missing but overrides declared."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        # Model directory without generation_config.json.
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+models:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+served:
+  - name: ep
+    model: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.5
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "apply",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 1
+
+    def test_generation_config_none_skipped(self, tmp_path: Path,
+                                            recorder: Recorder,
+                                            monkeypatch: pytest.MonkeyPatch):
+        """Model with generation=None (no overrides) skips generation_config.json."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+        original_genconfig = GENERATION_CONFIG
+        (model_dir / "generation_config.json").write_text(original_genconfig, encoding="utf-8")
+
+        # Config without generation field on the model.
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+models:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+served:
+  - name: ep
+    model: main
+    graph:
+      device: GPU
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "apply",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+        # generation_config.json must be unchanged.
+        live_genconfig = model_dir / "generation_config.json"
+        assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
+
+    def test_generation_config_empty_dict_skipped(self, tmp_path: Path,
+                                                  recorder: Recorder,
+                                                  monkeypatch: pytest.MonkeyPatch):
+        """Model with empty generation dict {} skips generation_config.json."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+        original_genconfig = GENERATION_CONFIG
+        (model_dir / "generation_config.json").write_text(original_genconfig, encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+models:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+served:
+  - name: ep
+    model: main
+    graph:
+      device: GPU
+    generation: {}
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "apply",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+        # generation_config.json must be unchanged.
+        live_genconfig = model_dir / "generation_config.json"
+        assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
