@@ -166,3 +166,34 @@ profiles:
     cfg = load_ovms(_write(tmp_path / "ovms.yaml", yaml_with_no_active))
     active_count = sum(1 for p in cfg.profiles.values() if p.active)
     assert active_count == 0
+
+
+def test_load_ovms_rejects_duplicate_source_per_model(tmp_path: Path) -> None:
+    """Invariant: one source per model. Two models with same source rejected."""
+    bad = """
+runtime:
+  rest_port: 8000
+
+repository:
+  main:
+    hf: org/main-int8-ov
+    task: text_generation
+
+models:
+  ep1:
+    source: main
+    graph:
+      device: GPU
+  ep2:
+    source: main
+    graph:
+      device: CPU
+"""
+    with pytest.raises(ConfigError, match="one source per model|ep1|ep2|main"):
+        load_ovms(_write(tmp_path / "ovms.yaml", bad))
+
+
+def test_load_ovms_rejects_empty_yaml(tmp_path: Path) -> None:
+    """Empty or whitespace-only YAML rejected (missing required runtime section)."""
+    with pytest.raises(ConfigError, match="schema validation failed|required"):
+        load_ovms(_write(tmp_path / "ovms.yaml", ""))
