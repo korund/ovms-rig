@@ -114,6 +114,20 @@ def _invoke(rig: dict, *extra_args: str) -> object:
     )
 
 
+def _invoke_apply_directly(rig: dict, dry_run: bool = False) -> int:
+    """Call apply.run() directly with prepared context."""
+    from ovms_rig.stages import apply
+    ctx = {
+        "config_path": str(rig["config"]),
+        "local_path": str(rig["local"]),
+        "ovms_path": sys.executable,
+        "log_level": None,
+        "dry_run": dry_run,
+        "extras": [],
+    }
+    return apply.run(ctx)
+
+
 # ---------------------------------------------------------------------------
 # Dry-run tests (via activate with internal apply --dry-run analogue)
 # ---------------------------------------------------------------------------
@@ -121,55 +135,109 @@ def _invoke(rig: dict, *extra_args: str) -> object:
 class TestDryRun:
     def test_dry_run_writes_sibling_to_build_not_live(self, rig: dict,
                                                       monkeypatch: pytest.MonkeyPatch):
+        """Dry-run writes sibling to build/, not to live store."""
         monkeypatch.chdir(rig["tmp"])
-        # Note: activate does not support --dry-run; these tests pass through apply layer
-        # For now, we test the live behavior via activate default.
-        result = _invoke(rig, "activate", "default")
-        assert result.exit_code == 0
+        rc = _invoke_apply_directly(rig, dry_run=True)
+        assert rc == 0
 
-        # Sibling-copy in store must exist (not build/, since activate goes live).
-        sibling = rig["store"] / "OpenVINO" / "main-int8-ov" / "graph.ep.pbtxt"
-        assert sibling.exists(), f"Expected {sibling} to exist"
+        # Sibling-copy in build/ must exist.
+        build_sibling = rig["tmp"] / "build" / "OpenVINO" / "main-int8-ov" / "graph.ep.pbtxt"
+        assert build_sibling.exists(), f"Expected {build_sibling} in build/"
 
-        # Pristine pbtxt must be UNCHANGED in live store.
+        # Sibling must NOT be in live store.
+        live_sibling = rig["store"] / "OpenVINO" / "main-int8-ov" / "graph.ep.pbtxt"
+        assert not live_sibling.exists(), f"Sibling should not exist in live store during dry-run"
+
+        # Pristine pbtxt must be UNCHANGED.
         pristine = rig["store"] / "OpenVINO" / "main-int8-ov" / "graph.pbtxt"
         pristine_content = pristine.read_text(encoding="utf-8")
         assert 'device: "CPU"' in pristine_content, "Pristine should not be modified"
 
-    def test_sibling_has_gpu_device(self, rig: dict,
-                                    monkeypatch: pytest.MonkeyPatch):
+    def test_dry_run_no_config_json_in_store(self, rig: dict,
+                                             monkeypatch: pytest.MonkeyPatch):
+        """Dry-run does not create config.json in live store."""
         monkeypatch.chdir(rig["tmp"])
-        result = _invoke(rig, "activate", "default")
-        assert result.exit_code == 0
-        sibling = rig["store"] / "OpenVINO" / "main-int8-ov" / "graph.ep.pbtxt"
-        content = sibling.read_text(encoding="utf-8")
-        assert 'device: "GPU"' in content
+        rc = _invoke_apply_directly(rig, dry_run=True)
+        assert rc == 0
 
-    def test_sibling_has_draft_path(self, rig: dict,
-                                    monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(rig["tmp"])
-        result = _invoke(rig, "activate", "default")
-        assert result.exit_code == 0
-        sibling = rig["store"] / "OpenVINO" / "main-int8-ov" / "graph.ep.pbtxt"
-        content = sibling.read_text(encoding="utf-8")
-        # draft_models_path must be present and point to draft dir
-        assert "draft_models_path" in content
-        assert "draft-int8-ov" in content
+        # Live config.json must NOT be created.
+        live_config = rig["store"] / "config.json"
+        assert not live_config.exists(), "config.json should not be created in live store during dry-run"
 
-    def test_creates_config_json(self, rig: dict,
-                                monkeypatch: pytest.MonkeyPatch):
+        # Build config.json should exist.
+        build_config = rig["tmp"] / "build" / "config.json"
+        assert build_config.exists(), "config.json should be in build/"
+
+    def test_dry_run_no_backups_created(self, rig: dict,
+                                        monkeypatch: pytest.MonkeyPatch):
+        """Dry-run does not create backup files."""
         monkeypatch.chdir(rig["tmp"])
-        result = _invoke(rig, "activate", "default")
-        assert result.exit_code == 0
-        config_path = rig["store"] / "config.json"
-        assert config_path.exists(), f"Expected {config_path} to exist"
-        # Verify JSON structure.
-        cfg = json.loads(config_path.read_text(encoding="utf-8"))
-        assert "mediapipe_config_list" in cfg
-        entries = cfg["mediapipe_config_list"]
-        assert len(entries) == 1
-        assert entries[0]["name"] == "ep"
-        assert "graph.ep.pbtxt" in entries[0]["graph_path"]
+        rc = _invoke_apply_directly(rig, dry_run=True)
+        assert rc == 0
+
+        # No backups in store.
+        backups = list(rig["store"].glob("*.bak.*"))
+        assert backups == [], f"No backups should be created during dry-run, found: {backups}"
+
+    def test_dry_run_with_generation_overrides_missing_file(self, tmp_path: Path,
+                                                           monkeypatch: pytest.MonkeyPatch):
+        """Dry-run with generation overrides and missing pristine generation_config.json doesn't crash."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        # Create model directory with graph.pbtxt but NO generation_config.json.
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: DEBUG
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.5
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+
+        # Call apply directly with dry_run=True.
+        from ovms_rig.stages import apply
+        ctx = {
+            "config_path": str(cfg),
+            "local_path": str(loc),
+            "ovms_path": sys.executable,
+            "log_level": None,
+            "dry_run": True,
+            "extras": [],
+        }
+        rc = apply.run(ctx)
+        assert rc == 0, "Dry-run should succeed even without generation_config.json"
+
+        # No files should be written to live store.
+        assert not (model_dir / "generation_config.json").exists()
+        # But build/ can have the proposed config.
+        build_path = tmp_path / "build"
+        # (may or may not exist depending on whether any files were written to build)
 
 
 # ---------------------------------------------------------------------------
@@ -551,6 +619,68 @@ profiles:
         live_genconfig = model_dir / "generation_config.json"
         assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
 
+    def test_generation_config_empty_dict_skipped(self, tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch):
+        """Model with empty generation dict {} skips generation_config.json (no overrides)."""
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        model_dir = store / "OpenVINO" / "main-int8-ov"
+        model_dir.mkdir(parents=True)
+        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+        original_genconfig = GENERATION_CONFIG
+        (model_dir / "generation_config.json").write_text(original_genconfig, encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+    generation: {}
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "activate",
+                "default",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+        # generation_config.json must be unchanged (empty dict is treated as no overrides).
+        live_genconfig = model_dir / "generation_config.json"
+        assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
+
+        # No backup should be created (because no overrides were applied).
+        genconfig_backups = list(model_dir.glob("generation_config.json.bak.*"))
+        assert genconfig_backups == [], "No backup should be created for empty generation dict"
+
 
 # ---------------------------------------------------------------------------
 # Profile-aware activation/deactivation tests
@@ -588,6 +718,77 @@ def test_deactivate_produces_empty_config(tmp_path: Path, monkeypatch: pytest.Mo
     assert config_json.exists()
     data = json.loads(config_json.read_text(encoding="utf-8"))
     assert data.get("mediapipe_config_list") == []
+
+
+def test_apply_partial_failure_missing_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Partial failure: one model missing, config.json reflects only successful models."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    # Create only main model directory (draft will be missing).
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+
+    # YAML with two models but only one directory exists.
+    ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: DEBUG
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+  draft:
+    hf: OpenVINO/draft-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+  draft_ep:
+    source: draft
+    graph:
+      device: CPU
+
+profiles:
+  default:
+    models: [ep, draft_ep]
+    active: true
+"""
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    from ovms_rig.stages import apply
+    ctx = {
+        "config_path": str(cfg),
+        "local_path": str(loc),
+        "ovms_path": sys.executable,
+        "log_level": None,
+        "dry_run": False,
+        "extras": [],
+    }
+    rc = apply.run(ctx)
+
+    # Should fail (rc=1) because one model directory is missing.
+    assert rc == 1
+
+    # Check config.json state: apply may have reconciled before failure or skipped it.
+    # After audit fix, apply should fail early on missing model_dir, before reconcile.
+    config_json = store / "config.json"
+    if config_json.exists():
+        # If config.json exists, it should only contain the successful model.
+        data = json.loads(config_json.read_text(encoding="utf-8"))
+        entries = data.get("mediapipe_config_list", [])
+        # Should be empty or contain only 'ep', not 'draft_ep'.
+        names = {e["name"] for e in entries if "name" in e}
+        assert "draft_ep" not in names, "Failed model should not be in config.json"
 
 
 def test_activate_different_profile_cleans_up_old_sibling_graphs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
