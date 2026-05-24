@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ovms_rig.stages import activation, fetch, start, status
+from ovms_rig.stages import activation, fetch, remove, start, status
 
 LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -91,6 +91,22 @@ def cmd_activate(ctx: click.Context, profile_name: str) -> None:
 def cmd_deactivate(ctx: click.Context) -> None:
     """Deactivate all profiles: live config becomes empty."""
     sys.exit(activation.set_active_profile(ctx.obj, None))
+
+
+@main.command("remove")
+@click.argument("repository_name")
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Ignore references from ovms.yaml profiles.",
+)
+@click.pass_context
+def cmd_remove(ctx: click.Context, repository_name: str, force: bool) -> None:
+    """Remove artifacts for a single repository entry (inverse of fetch)."""
+    ctx.obj["repository_name"] = repository_name
+    ctx.obj["force"] = force
+    sys.exit(remove.run(ctx.obj))
 
 
 @main.command(
