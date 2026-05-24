@@ -116,10 +116,16 @@ class ModelEntry(_Strict):
     generation: dict[str, int | float | bool | str | list[Any]] | None = None
 
 
+class Profile(_Strict):
+    models: list[str]
+    active: bool = False
+
+
 class OvmsConfig(_Strict):
     runtime: Runtime
     repository: dict[str, ModelIdentity]
     models: dict[str, ModelEntry]
+    profiles: dict[str, Profile] = Field(default_factory=dict)
 
 
 # ----- local.yaml -----

@@ -21,6 +21,7 @@ def load_ovms(path: Path) -> OvmsConfig:
     except ValidationError as e:
         raise ConfigError(f"{path}: schema validation failed\n{e}") from e
     _check_references(cfg, source=path)
+    _check_profiles(cfg, source=path)
     return cfg
 
 
@@ -67,3 +68,24 @@ def _check_references(cfg: OvmsConfig, source: Path) -> None:
                 f"{source}: model '{name}' references unknown "
                 f"draft_model '{draft}' (declared models: {sorted(known)})"
             )
+
+
+def _check_profiles(cfg: OvmsConfig, source: Path) -> None:
+    known_models = set(cfg.models)
+
+    # Check that all profile.models references exist in cfg.models.
+    for profile_name, profile in cfg.profiles.items():
+        for model_name in profile.models:
+            if model_name not in known_models:
+                raise ConfigError(
+                    f"{source}: profile '{profile_name}' references unknown model "
+                    f"'{model_name}' (declared models: {sorted(known_models)})"
+                )
+
+    # Check that at most one profile is active.
+    active_profiles = [name for name, profile in cfg.profiles.items() if profile.active]
+    if len(active_profiles) > 1:
+        raise ConfigError(
+            f"{source}: at most one profile can be active, got {len(active_profiles)}: "
+            f"{active_profiles}"
+        )

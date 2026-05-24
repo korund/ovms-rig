@@ -14,6 +14,7 @@ from ovms_rig.config.schema import (
     ModelEntry,
     ModelIdentity,
     OvmsConfig,
+    Profile,
     Runtime,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     "ModelEntry",
     "ModelIdentity",
     "OvmsConfig",
+    "Profile",
     "Runtime",
     "load_local",
     "load_ovms",
