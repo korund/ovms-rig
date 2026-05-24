@@ -22,6 +22,15 @@ repository:
     hf: OpenVINO/Qwen3-0.6B-int8-ov
     task: text_generation
 
+# Profiles group model endpoints into sets that can be brought up together.
+# At most one profile may have `active: true`; that profile's models end up in
+# config.json after `rig activate`. Endpoints outside every profile stay defined
+# but never load. `rig deactivate` clears the active flag (empty live config).
+profiles:
+  default:
+    models: [qwen3-spec]
+    active: true
+
 models:
   qwen3-spec:
     source: qwen3-14b
