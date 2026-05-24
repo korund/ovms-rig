@@ -22,7 +22,7 @@ runtime:
   rest_port: 8000
   log_level: DEBUG
 
-models:
+repository:
   main:
     hf: org/main-int8-ov
     task: text_generation

@@ -43,7 +43,7 @@ def _read_yaml(path: Path) -> dict:
 
 
 def _check_references(cfg: OvmsConfig, source: Path) -> None:
-    known = set(cfg.models)
+    known = set(cfg.repository)
     targets: dict[str, str] = {}
     for entry in cfg.served:
         if entry.model not in known:

@@ -65,8 +65,8 @@ def run(ctx: dict) -> int:
     env = build_env(binary.parent)
 
     failures: list[str] = []
-    for name in sorted(ovms.models):
-        model = ovms.models[name]
+    for name in sorted(ovms.repository):
+        model = ovms.repository[name]
         dest = store / model.hf
         if dest.is_dir():
             logger.info("[skip] %s (already present at %s)", name, dest)

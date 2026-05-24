@@ -50,7 +50,7 @@ def check_destination(local: LocalConfig) -> CheckResult:
 
 def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
     store = local.models.repository_path
-    declared = sorted(ovms.models)
+    declared = sorted(ovms.repository)
     if not store.exists():
         return CheckResult(
             name=INVENTORY,
@@ -59,7 +59,7 @@ def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
             details={"declared": declared, "present": [], "missing": declared},
             hint="run `ovms-rig fetch` to populate the store",
         )
-    # Inventory keys by short name (ovms.models key) but probes the disk
+    # Inventory keys by short name (ovms.repository key) but probes the disk
     # at the HF path -- which is the layout produced by `ovms --pull`.
     present = [name for name in declared if _model_dir(store, ovms, name).is_dir()]
     missing = [name for name in declared if name not in present]
@@ -76,7 +76,7 @@ def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
 
 def _model_dir(store: Path, ovms: OvmsConfig, name: str) -> Path:
     """Map a declared model name to its on-disk location (HF-layout)."""
-    return store / ovms.models[name].hf
+    return store / ovms.repository[name].hf
 
 
 def _nearest_existing_ancestor(path: Path) -> Path | None:

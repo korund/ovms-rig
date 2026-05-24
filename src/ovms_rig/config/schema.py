@@ -75,7 +75,7 @@ class Graph(_Strict):
     # Pbtxt-only: patched into graph.pbtxt during apply.
     device: Device  # required; ovms cannot start without a target device
     draft_device: Device | None = None
-    # Reference into ovms.yaml `models:` keys. Resolved to a filesystem path
+    # Reference into ovms.yaml `repository:` keys. Resolved to a filesystem path
     # (draft_models_path in pbtxt) during apply, relative to the target's
     # graph.pbtxt directory.
     draft_model: str | None = None
@@ -119,7 +119,7 @@ class ServedEntry(_Strict):
 
 class OvmsConfig(_Strict):
     runtime: Runtime
-    models: dict[str, ModelIdentity]
+    repository: dict[str, ModelIdentity]
     served: list[ServedEntry]
 
 

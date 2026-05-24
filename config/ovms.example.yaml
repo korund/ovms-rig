@@ -3,9 +3,9 @@
 # Machine-specific values (paths, ports) live in local.yaml; see local.example.yaml.
 #
 # Shape mirrors the OVMS domain:
-#   - `models`  : identities (HF reference + revision), declared once
-#   - `served`  : HTTP endpoints, each backed by a model and a bag of LLMCalculator
-#                 fields. References into `models` are by name.
+#   - `repository` : identities (HF reference + revision), declared once
+#   - `served`     : HTTP endpoints, each backed by a model and a bag of LLMCalculator
+#                    fields. References into `repository` are by name.
 # Speculative decoding is not a special pipeline mode here -- it emerges when a
 # served entry's `graph` contains `draft_model`. Drop that field and the same
 # tool produces a plain single-model setup, no special-casing.
@@ -14,7 +14,7 @@ runtime:
   rest_port: 8000
   log_level: INFO   # TRACE | DEBUG | INFO | WARNING | ERROR
 
-models:
+repository:
   qwen3-14b:
     hf: OpenVINO/Qwen3-14B-int8-ov
     task: text_generation

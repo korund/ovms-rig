@@ -28,7 +28,7 @@ runtime:
   rest_port: 8000
   log_level: DEBUG
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation
@@ -269,7 +269,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation
@@ -328,7 +328,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation
@@ -386,7 +386,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation
@@ -436,7 +436,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation
@@ -487,7 +487,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: OpenVINO/main-int8-ov
     task: text_generation

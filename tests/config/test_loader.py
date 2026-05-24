@@ -13,7 +13,7 @@ runtime:
   rest_port: 8000
   log_level: INFO
 
-models:
+repository:
   main:
     hf: org/main-int8-ov
     task: text_generation
@@ -39,7 +39,7 @@ def _write(path: Path, content: str) -> Path:
 def test_load_ovms_happy_path(tmp_path: Path) -> None:
     cfg = load_ovms(_write(tmp_path / "ovms.yaml", VALID_OVMS))
     assert cfg.runtime.rest_port == 8000
-    assert set(cfg.models) == {"main", "draft"}
+    assert set(cfg.repository) == {"main", "draft"}
     assert cfg.served[0].graph.draft_model == "draft"
 
 

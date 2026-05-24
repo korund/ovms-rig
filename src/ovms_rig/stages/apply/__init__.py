@@ -67,7 +67,7 @@ def run(ctx: dict) -> int:
     failures: list[str] = []
 
     for entry in ovms.served:
-        model_identity = ovms.models[entry.model]
+        model_identity = ovms.repository[entry.model]
         target_dir = model_dir(store, model_identity.hf)
 
         if not target_dir.is_dir():
@@ -90,7 +90,7 @@ def run(ctx: dict) -> int:
         # Resolve draft path if declared.
         draft_rel: str | None = None
         if entry.graph.draft_model is not None:
-            draft_identity = ovms.models[entry.graph.draft_model]
+            draft_identity = ovms.repository[entry.graph.draft_model]
             draft_dir = model_dir(store, draft_identity.hf)
             draft_rel = relative_posix(target_dir, draft_dir)
 
