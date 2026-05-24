@@ -48,9 +48,9 @@ def run(ctx: dict) -> int:
                      repository_name, sorted(ovms.repository.keys()))
         return 1
 
-    binary, _src = ovms_binary.resolve(ovms_override, local)
-    if binary is None or not binary.is_file():
-        logger.error("ovms binary not resolved; run `ovms-rig status` for details")
+    binary, source, error = ovms_binary.resolve_validated(ovms_override, local)
+    if error is not None:
+        logger.error("ovms binary %s (source: %s); run `ovms-rig status` for details", error, source)
         return 1
 
     store = local.models.repository_path
