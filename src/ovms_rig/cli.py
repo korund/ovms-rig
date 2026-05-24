@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ovms_rig.stages import apply, fetch, profile, start, status
+from ovms_rig.stages import activation, fetch, start, status
 
 LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -83,14 +83,14 @@ def cmd_fetch(ctx: click.Context, repository_name: str) -> None:
 @click.pass_context
 def cmd_activate(ctx: click.Context, profile_name: str) -> None:
     """Activate a profile: update ovms.yaml and rebuild live config."""
-    sys.exit(profile.set_active_profile(ctx.obj, profile_name))
+    sys.exit(activation.set_active_profile(ctx.obj, profile_name))
 
 
 @main.command("deactivate")
 @click.pass_context
 def cmd_deactivate(ctx: click.Context) -> None:
     """Deactivate all profiles: live config becomes empty."""
-    sys.exit(profile.set_active_profile(ctx.obj, None))
+    sys.exit(activation.set_active_profile(ctx.obj, None))
 
 
 @main.command(

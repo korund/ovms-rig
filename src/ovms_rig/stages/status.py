@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from ovms_rig import log as logging_setup
-from ovms_rig.probes import live_config, model_store, models, ovms_binary, port, profiles
+from ovms_rig.probes import live_config, repository, models, ovms_binary, port, profiles
 from ovms_rig.config import ConfigError, load_local, load_ovms
 from ovms_rig.report import CheckResult
 
@@ -40,8 +40,8 @@ def run(ctx: dict) -> int:
     results: list[CheckResult] = [
         _declaration_ok(config_path, local_path),
         ovms_binary.check(ovms_override, local),
-        model_store.check_destination(local),
-        model_store.check_inventory(ovms, local),
+        repository.check_destination(local),
+        repository.check_inventory(ovms, local),
         models.check(ovms),
         profiles.check(ovms),
         port.check(ovms),

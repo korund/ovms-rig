@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ovms_rig.stages.apply.registry import reconcile_mediapipe_entries
+from ovms_rig.stages.activation.registry import reconcile_mediapipe_entries
 
 
 def test_reconcile_skips_entry_without_name(tmp_path: Path) -> None:

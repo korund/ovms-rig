@@ -27,10 +27,11 @@ from ovms_rig.config import (
 )
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
-from ovms_rig.stages.apply.generation import merge as merge_generation
-from ovms_rig.stages.apply.paths import model_dir, relative_posix
-from ovms_rig.stages.apply.pbtxt import collect_pbtxt_fields, patch
-from ovms_rig.stages.apply.registry import reconcile_mediapipe_entries
+from ovms_rig.stages.activation.generation import merge as merge_generation
+from ovms_rig.stages.activation.paths import model_dir, relative_posix
+from ovms_rig.stages.activation.pbtxt import collect_pbtxt_fields, patch
+from ovms_rig.stages.activation.registry import reconcile_mediapipe_entries
+from ovms_rig.stages.activation import cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +234,7 @@ def run(ctx: dict) -> int:
 
     # Cleanup obsolete sibling-graphs from previous activations (live run only).
     if not dry_run:
-        cleaned_up = _cleanup_obsolete_sibling_graphs(store, active_models, ovms)
+        cleaned_up = cleanup.cleanup_obsolete_sibling_graphs(store, active_models, ovms)
         if cleaned_up:
             logger.info("[apply] cleaned up %d obsolete sibling-graph(s)", len(cleaned_up))
 
@@ -246,44 +247,6 @@ def run(ctx: dict) -> int:
     return 0
 
 
-def _cleanup_obsolete_sibling_graphs(store: Path, active_models: set[str], ovms: OvmsConfig) -> list[str]:
-    """Remove sibling-graphs for models not in active profile.
-
-    Scans model directories from ovms.repository and removes graph.<name>.pbtxt
-    files whose <name> is not in active_models.
-
-    Returns list of cleaned-up paths.
-    """
-    cleaned_up: list[str] = []
-    seen_dirs: set[Path] = set()
-
-    for repo_name, identity in ovms.repository.items():
-        model_dir = store / identity.hf
-        if model_dir in seen_dirs or not model_dir.is_dir():
-            continue
-        seen_dirs.add(model_dir)
-
-        for sibling_graph in model_dir.glob("graph.*.pbtxt"):
-            # Extract model name from filename: graph.<name>.pbtxt
-            # Use Path.stem to remove .pbtxt, then removeprefix to get name.
-            stem = sibling_graph.stem  # removes .pbtxt
-            name = stem.removeprefix("graph.")
-
-            # Skip if name is empty (malformed filename).
-            if not name:
-                logger.debug("[cleanup] skipping malformed sibling-graph: %s", sibling_graph)
-                continue
-
-            # If model not in active_models, remove the sibling-graph.
-            if name not in active_models:
-                try:
-                    sibling_graph.unlink()
-                    cleaned_up.append(str(sibling_graph))
-                    logger.debug("[cleanup] removed obsolete sibling-graph: %s", sibling_graph)
-                except OSError as exc:
-                    logger.warning("[cleanup] failed to remove %s: %s", sibling_graph, exc)
-
-    return cleaned_up
 
 
 def _backup_file(src: Path, timestamp: str) -> None:

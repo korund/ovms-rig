@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ovms_rig.stages.apply.paths import relative_posix
+from ovms_rig.stages.activation.paths import relative_posix
 
 
 class TestSameOrg:

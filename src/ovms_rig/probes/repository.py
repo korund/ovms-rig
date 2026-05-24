@@ -61,7 +61,7 @@ def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
         )
     # Inventory keys by short name (ovms.repository key) but probes the disk
     # at the HF path -- which is the layout produced by `ovms --pull`.
-    present = [name for name in declared if _model_dir(store, ovms, name).is_dir()]
+    present = [name for name in declared if _weights_dir(store, ovms, name).is_dir()]
     missing = [name for name in declared if name not in present]
     summary = f"{len(present)}/{len(declared)} present"
     hint = "run `ovms-rig fetch` to populate missing models" if missing else None
@@ -74,7 +74,7 @@ def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
     )
 
 
-def _model_dir(store: Path, ovms: OvmsConfig, name: str) -> Path:
+def _weights_dir(store: Path, ovms: OvmsConfig, name: str) -> Path:
     """Map a declared model name to its on-disk location (HF-layout)."""
     return store / ovms.repository[name].hf
 

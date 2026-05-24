@@ -1,7 +1,7 @@
 """Profile activation/deactivation stage.
 
 Updates ovms.yaml active fields and rebuilds config.json + sibling graphs
-via apply stage.
+via apply submodule.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import yaml
 
 from ovms_rig import log as logging_setup
 from ovms_rig.config import ConfigError, load_local, load_ovms
-from ovms_rig.stages import apply
+from ovms_rig.stages.activation import apply
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
     try:
         with open(config_path, "r", encoding="utf-8") as src:
             backup_path.write_text(src.read(), encoding="utf-8")
-        logger.info("[profile] backed up ovms.yaml to %s", backup_path)
+        logger.info("[activation] backed up ovms.yaml to %s", backup_path)
     except OSError as e:
         logger.error("failed to backup ovms.yaml: %s", e)
         return 1
@@ -96,10 +96,10 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
     temp_path = config_path.parent / f"{config_path.name}.tmp.{timestamp}"
     try:
         temp_path.write_text(new_yaml_str, encoding="utf-8")
-        logger.debug("[profile] wrote temp file: %s", temp_path)
+        logger.debug("[activation] wrote temp file: %s", temp_path)
         # Atomic replace: os.replace is atomic on the same filesystem.
         os.replace(temp_path, config_path)
-        logger.info("[profile] updated ovms.yaml")
+        logger.info("[activation] updated ovms.yaml")
     except (OSError, yaml.YAMLError) as e:
         logger.error("failed to write ovms.yaml: %s", e)
         # Clean up temp file if it exists.
@@ -110,26 +110,26 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
         return 1
 
     # Call apply.run to rebuild config.json and sibling graphs.
-    # Pass dry_run=False and extras=[] (no extras needed for apply).
+    # Pass dry_run=False and extras=[] (no extras needed).
     apply_ctx = dict(ctx)
     apply_ctx["dry_run"] = False
     apply_ctx["extras"] = []
 
     rc = apply.run(apply_ctx)
     if rc != 0:
-        logger.error("[profile] apply failed while rebuilding config (rc=%d)", rc)
+        logger.error("[activation] apply failed while rebuilding config (rc=%d)", rc)
         # Rollback: restore ovms.yaml from backup.
         try:
             shutil.copy(backup_path, config_path)
-            logger.info("[profile] apply failed (rc=%d), rolled back ovms.yaml from %s", rc, backup_path)
+            logger.info("[activation] apply failed (rc=%d), rolled back ovms.yaml from %s", rc, backup_path)
         except OSError as e:
-            logger.error("[profile] failed to rollback ovms.yaml: %s", e)
+            logger.error("[activation] failed to rollback ovms.yaml: %s", e)
         return rc
 
     # Log final state.
     if target is not None:
-        logger.info("[profile] '%s' is now active", target)
+        logger.info("[activation] '%s' is now active", target)
     else:
-        logger.info("[profile] no profile is active")
+        logger.info("[activation] no profile is active")
 
     return 0

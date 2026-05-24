@@ -6,7 +6,7 @@ import pytest
 
 from pathlib import Path
 
-from ovms_rig.stages.apply.pbtxt import (
+from ovms_rig.stages.activation.pbtxt import (
     collect_pbtxt_fields,
     format_plugin_config,
     patch,

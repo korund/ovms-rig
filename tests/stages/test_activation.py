@@ -275,8 +275,8 @@ def test_activate_rolls_back_yaml_when_apply_fails(rig: dict, monkeypatch: pytes
     assert original_data["profiles"]["bench"]["active"] is False
 
     # Mock apply.run to fail.
-    from ovms_rig.stages import apply
-    monkeypatch.setattr("ovms_rig.stages.apply.run", lambda ctx: 1)
+    from ovms_rig.stages.activation import apply
+    monkeypatch.setattr("ovms_rig.stages.activation.apply.run", lambda ctx: 1)
 
     # Attempt to activate bench (which will fail when apply runs).
     result = _invoke(rig, "activate", "bench")

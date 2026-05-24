@@ -116,7 +116,7 @@ def _invoke(rig: dict, *extra_args: str) -> object:
 
 def _invoke_apply_directly(rig: dict, dry_run: bool = False) -> int:
     """Call apply.run() directly with prepared context."""
-    from ovms_rig.stages import apply
+    from ovms_rig.stages.activation import apply
     ctx = {
         "config_path": str(rig["config"]),
         "local_path": str(rig["local"]),
@@ -221,7 +221,7 @@ profiles:
         monkeypatch.chdir(tmp_path)
 
         # Call apply directly with dry_run=True.
-        from ovms_rig.stages import apply
+        from ovms_rig.stages.activation import apply
         ctx = {
             "config_path": str(cfg),
             "local_path": str(loc),
@@ -765,7 +765,7 @@ profiles:
     loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    from ovms_rig.stages import apply
+    from ovms_rig.stages.activation import apply
     ctx = {
         "config_path": str(cfg),
         "local_path": str(loc),

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from ovms_rig.stages.apply.generation import merge
+from ovms_rig.stages.activation.generation import merge
 
 
 class TestMerge:
