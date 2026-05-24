@@ -1,6 +1,6 @@
 """Apply stage: copy pristine graph.pbtxt to sibling + patch + register.
 
-Steps per model entry:
+Steps per model entry in active profile:
 1. Resolve target model directory (store/<hf_org>/<hf_repo>).
 2. Read pristine graph.pbtxt (never mutated).
 3. Create sibling copy graph.<model_name>.pbtxt.
@@ -8,6 +8,7 @@ Steps per model entry:
 5. Merge generation_config.json overrides if declared on model.
 6. Register endpoint via direct config.json JSON write (not ovms CLI).
 7. Backup config.json after registration (live run only).
+8. Cleanup obsolete sibling-graphs from previous activations.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.apply.generation import merge as merge_generation
 from ovms_rig.stages.apply.paths import model_dir, relative_posix
 from ovms_rig.stages.apply.pbtxt import collect_pbtxt_fields, patch
-from ovms_rig.stages.apply.registry import register_mediapipe_entry
+from ovms_rig.stages.apply.registry import reconcile_mediapipe_entries
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +63,28 @@ def run(ctx: dict) -> int:
 
     store = local.models.repository_path
 
+    # Determine active profile and get active models.
+    active_profile_name = None
+    active_models: set[str] = set()
+    for profile_name, profile in ovms.profiles.items():
+        if profile.active:
+            active_profile_name = profile_name
+            active_models = set(profile.models)
+            break
+
+    if active_profile_name:
+        logger.info("[apply] using profile '%s' with %d model(s)", active_profile_name, len(active_models))
+    else:
+        logger.info("[apply] no active profile; will register empty config")
+
     env = build_env(binary.parent)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     failures: list[str] = []
+    processed_models: list[str] = []
 
-    for model_name, entry in ovms.models.items():
+    # Process only models in active profile.
+    for model_name in active_models:
+        entry = ovms.models[model_name]
         model_identity = ovms.repository[entry.source]
         target_dir = model_dir(store, model_identity.hf)
 
@@ -166,39 +184,81 @@ def run(ctx: dict) -> int:
                 model_name, dest_genconfig,
             )
 
-        # Step 6: register in config.json via direct JSON write.
-        if dry_run:
-            config_json_path = _BUILD_DIR / "config.json"
-        else:
-            config_json_path = store / "config.json"
+        processed_models.append(model_name)
 
-        config_json_path.parent.mkdir(parents=True, exist_ok=True)
+    # Reconcile config.json with only active models.
+    if dry_run:
+        config_json_path = _BUILD_DIR / "config.json"
+    else:
+        config_json_path = store / "config.json"
 
-        # Backup config.json before mutation (live run only).
-        if not dry_run and config_json_path.exists():
-            _backup_file(config_json_path, timestamp)
+    config_json_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Register mediapipe entry with sibling-copy graph path.
-        # graph_path is relative from base_path (model directory).
-        try:
-            register_mediapipe_entry(
-                config_path=config_json_path,
-                entry_name=model_name,
-                base_path=target_dir.resolve(),
-                graph_path=f"graph.{model_name}.pbtxt",
-            )
-        except (OSError, ValueError) as exc:
-            logger.error("[apply] %s: failed to register in config.json: %s", model_name, exc)
-            failures.append(model_name)
-            continue
+    # Backup config.json before mutation (live run only).
+    if not dry_run and config_json_path.exists():
+        _backup_file(config_json_path, timestamp)
+
+    # Build desired entries dict from processed models.
+    desired_entries: dict[str, tuple[Path, str]] = {}
+    for model_name in processed_models:
+        entry = ovms.models[model_name]
+        model_identity = ovms.repository[entry.source]
+        target_dir = model_dir(store, model_identity.hf)
+        desired_entries[model_name] = (target_dir.resolve(), f"graph.{model_name}.pbtxt")
+
+    try:
+        reconcile_mediapipe_entries(config_json_path, desired_entries)
+        logger.info("[apply] config.json reconciled with %d model(s)", len(desired_entries))
+    except (OSError, ValueError) as exc:
+        logger.error("[apply] failed to reconcile config.json: %s", exc)
+        failures.append("config.json")
+
+    # Cleanup obsolete sibling-graphs from previous activations (live run only).
+    if not dry_run:
+        cleaned_up = _cleanup_obsolete_sibling_graphs(store, active_models, ovms)
+        if cleaned_up:
+            logger.info("[apply] cleaned up %d obsolete sibling-graph(s)", len(cleaned_up))
 
     if failures:
         logger.error("apply failed for: %s", ", ".join(failures))
         return 1
 
     mode = "dry-run -> build/" if dry_run else "live"
-    logger.info("[apply] done (%s)", mode)
+    logger.info("[apply] done (%s) with %d model(s)", mode, len(processed_models))
     return 0
+
+
+def _cleanup_obsolete_sibling_graphs(store: Path, active_models: set[str], ovms: OvmsConfig) -> list[str]:
+    """Remove sibling-graphs for models not in active profile.
+
+    Scans model directories from ovms.repository and removes graph.<name>.pbtxt
+    files whose <name> is not in active_models.
+
+    Returns list of cleaned-up paths.
+    """
+    cleaned_up: list[str] = []
+    seen_dirs: set[Path] = set()
+
+    for repo_name, identity in ovms.repository.items():
+        model_dir = store / identity.hf
+        if model_dir in seen_dirs or not model_dir.is_dir():
+            continue
+        seen_dirs.add(model_dir)
+
+        for sibling_graph in model_dir.glob("graph.*.pbtxt"):
+            # Extract model name from filename: graph.<name>.pbtxt
+            name = sibling_graph.name[len("graph."):-len(".pbtxt")]
+
+            # If model not in active_models, remove the sibling-graph.
+            if name not in active_models:
+                try:
+                    sibling_graph.unlink()
+                    cleaned_up.append(str(sibling_graph))
+                    logger.debug("[cleanup] removed obsolete sibling-graph: %s", sibling_graph)
+                except OSError as exc:
+                    logger.warning("[cleanup] failed to remove %s: %s", sibling_graph, exc)
+
+    return cleaned_up
 
 
 def _backup_file(src: Path, timestamp: str) -> None:

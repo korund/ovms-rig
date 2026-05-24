@@ -43,6 +43,11 @@ models:
       device: GPU
       draft_model: draft
       draft_device: CPU
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
 
 LOCAL_YAML = """\
@@ -282,6 +287,11 @@ models:
     generation:
       temperature: 0.5
       top_p: 0.95
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
         cfg.write_text(ovms_yaml, encoding="utf-8")
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
@@ -340,6 +350,11 @@ models:
       device: GPU
     generation:
       temperature: 0.3
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
         cfg.write_text(ovms_yaml, encoding="utf-8")
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
@@ -398,6 +413,11 @@ models:
       device: GPU
     generation:
       temperature: 0.5
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
         cfg.write_text(ovms_yaml, encoding="utf-8")
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
@@ -446,6 +466,11 @@ models:
     source: main
     graph:
       device: GPU
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
         cfg.write_text(ovms_yaml, encoding="utf-8")
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
@@ -498,6 +523,11 @@ models:
     graph:
       device: GPU
     generation: {}
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
         cfg.write_text(ovms_yaml, encoding="utf-8")
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
@@ -519,3 +549,81 @@ models:
         # generation_config.json must be unchanged.
         live_genconfig = model_dir / "generation_config.json"
         assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
+
+
+# Tests for profile-aware apply behavior
+def test_apply_no_active_profile_empty_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Apply without active profile -> config.json has empty mediapipe_config_list."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+
+    ovms_yaml = OVMS_YAML.replace(
+        "profiles:\n  default:\n    models: [ep]\n    active: true",
+        "profiles:\n  default:\n    models: [ep]\n    active: false",
+    )
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config", str(cfg),
+            "--local", str(loc),
+            "--ovms-path", sys.executable,
+            "apply",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+
+    config_json = store / "config.json"
+    assert config_json.exists()
+    data = json.loads(config_json.read_text(encoding="utf-8"))
+    assert data.get("mediapipe_config_list") == []
+
+
+def test_apply_cleans_up_obsolete_sibling_graphs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Apply removes sibling graphs from previous activations not in current profile."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+
+    # Create obsolete sibling graphs from previous activation.
+    (model_dir / "graph.old_model.pbtxt").write_text("obsolete", encoding="utf-8")
+    (model_dir / "graph.another.pbtxt").write_text("obsolete", encoding="utf-8")
+
+    cfg.write_text(OVMS_YAML, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config", str(cfg),
+            "--local", str(loc),
+            "--ovms-path", sys.executable,
+            "apply",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+
+    # Obsolete sibling graphs should be deleted.
+    assert not (model_dir / "graph.old_model.pbtxt").exists()
+    assert not (model_dir / "graph.another.pbtxt").exists()
+    # Current sibling graph should exist.
+    assert (model_dir / "graph.ep.pbtxt").exists()

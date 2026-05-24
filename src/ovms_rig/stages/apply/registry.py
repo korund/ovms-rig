@@ -1,7 +1,9 @@
 """Direct manipulation of config.json to register mediapipe_config_list entries.
 
 Instead of shelling out to `ovms --add_to_config`, this module reads/writes
-the config.json directly and upserts mediapipe_config_list entries.
+the config.json directly. Two modes of operation:
+- register_mediapipe_entry: upsert a single entry
+- reconcile_mediapipe_entries: reconcile the entire list (keep only specified entries)
 
 Entry structure:
   {
@@ -9,9 +11,6 @@ Entry structure:
     "base_path": "<absolute_path_to_model_directory>",
     "graph_path": "graph.<model_name>.pbtxt"  (relative from base_path)
   }
-
-Idempotency: if an entry with the same name already exists, it is updated
-in-place rather than duplicated.
 """
 
 from __future__ import annotations
@@ -75,3 +74,60 @@ def register_mediapipe_entry(
     config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     logger.debug("[registry] registered mediapipe entry: name=%s, base_path=%s, graph_path=%s",
                  entry_name, base_path, graph_path)
+
+
+def reconcile_mediapipe_entries(
+    config_path: Path,
+    desired_entries: dict[str, tuple[Path, str]],
+) -> None:
+    """Reconcile mediapipe_config_list to contain exactly the desired entries.
+
+    desired_entries: dict mapping model_name -> (base_path, graph_path).
+    Removes any entries not in desired_entries, updates existing ones,
+    and adds missing ones.
+
+    If desired_entries is empty, mediapipe_config_list becomes [].
+
+    Raises OSError if file I/O fails, ValueError if JSON is malformed.
+    """
+    # Load existing config or start with empty dict.
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in {config_path}: {exc}") from exc
+    else:
+        data = {}
+
+    # Ensure mediapipe_config_list exists.
+    if "mediapipe_config_list" not in data:
+        data["mediapipe_config_list"] = []
+
+    entries = data["mediapipe_config_list"]
+
+    # Build map of existing entries by name for efficient lookup.
+    existing_by_name = {e.get("name"): e for e in entries if e.get("name")}
+
+    # Reconcile: keep only entries in desired_entries, update or add as needed.
+    reconciled = []
+    for model_name, (base_path, graph_path) in desired_entries.items():
+        if model_name in existing_by_name:
+            # Update existing entry.
+            entry = existing_by_name[model_name]
+            entry["base_path"] = str(base_path)
+            entry["graph_path"] = graph_path
+            reconciled.append(entry)
+        else:
+            # Add new entry.
+            reconciled.append({
+                "name": model_name,
+                "base_path": str(base_path),
+                "graph_path": graph_path,
+            })
+
+    data["mediapipe_config_list"] = reconciled
+
+    # Write back with nice formatting.
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    logger.debug("[registry] reconciled mediapipe entries: desired=%s", list(desired_entries.keys()))
