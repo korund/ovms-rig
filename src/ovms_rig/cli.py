@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ovms_rig.stages import apply, fetch, start, status
+from ovms_rig.stages import apply, fetch, profile, start, status
 
 LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -78,23 +78,19 @@ def cmd_fetch(ctx: click.Context, repository_name: str) -> None:
     sys.exit(fetch.run(ctx.obj))
 
 
-@main.command(
-    "apply",
-    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-)
-@click.option(
-    "--dry-run",
-    "dry_run",
-    is_flag=True,
-    default=False,
-    help="Write proposed graph.pbtxt and config.json to build/ without touching live files.",
-)
+@main.command("activate")
+@click.argument("profile_name")
 @click.pass_context
-def cmd_apply(ctx: click.Context, dry_run: bool) -> None:
-    """Back up live files into .backup/<timestamp>/ and apply the declaration to them."""
-    ctx.obj["dry_run"] = dry_run
-    ctx.obj["extras"] = list(ctx.args)
-    sys.exit(apply.run(ctx.obj))
+def cmd_activate(ctx: click.Context, profile_name: str) -> None:
+    """Activate a profile: update ovms.yaml and rebuild live config."""
+    sys.exit(profile.set_active_profile(ctx.obj, profile_name))
+
+
+@main.command("deactivate")
+@click.pass_context
+def cmd_deactivate(ctx: click.Context) -> None:
+    """Deactivate all profiles: live config becomes empty."""
+    sys.exit(profile.set_active_profile(ctx.obj, None))
 
 
 @main.command(

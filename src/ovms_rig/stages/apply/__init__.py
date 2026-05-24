@@ -21,6 +21,7 @@ from pathlib import Path
 from ovms_rig import log as logging_setup
 from ovms_rig.config import (
     ConfigError,
+    OvmsConfig,
     load_local,
     load_ovms,
 )
