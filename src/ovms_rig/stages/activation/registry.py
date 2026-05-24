@@ -3,7 +3,7 @@
 Instead of shelling out to `ovms --add_to_config`, this module reads/writes
 the config.json directly. Two modes of operation:
 - register_mediapipe_entry: upsert a single entry
-- reconcile_mediapipe_entries: reconcile the entire list (keep only specified entries)
+- render_mediapipe_entries: render the entire list as exact projection of desired entries
 
 Entry structure:
   {
@@ -76,15 +76,16 @@ def register_mediapipe_entry(
                  entry_name, base_path, graph_path)
 
 
-def reconcile_mediapipe_entries(
+def render_mediapipe_entries(
     config_path: Path,
     desired_entries: dict[str, tuple[Path, str]],
 ) -> None:
-    """Reconcile mediapipe_config_list to contain exactly the desired entries.
+    """Render mediapipe_config_list as exact projection of desired_entries.
 
     desired_entries: dict mapping model_name -> (base_path, graph_path).
-    Removes any entries not in desired_entries, updates existing ones,
-    and adds missing ones.
+    Replaces mediapipe_config_list entirely with entries from desired_entries,
+    removing any entries not in the new set. Other top-level config.json keys
+    remain untouched.
 
     If desired_entries is empty, mediapipe_config_list becomes [].
 
@@ -115,26 +116,26 @@ def reconcile_mediapipe_entries(
             continue
         existing_by_name[entry_name] = e
 
-    # Reconcile: keep only entries in desired_entries, update or add as needed.
-    reconciled = []
+    # Render: keep only entries in desired_entries, update or add as needed.
+    rendered = []
     for model_name, (base_path, graph_path) in desired_entries.items():
         if model_name in existing_by_name:
             # Update existing entry.
             entry = existing_by_name[model_name]
             entry["base_path"] = str(base_path)
             entry["graph_path"] = graph_path
-            reconciled.append(entry)
+            rendered.append(entry)
         else:
             # Add new entry.
-            reconciled.append({
+            rendered.append({
                 "name": model_name,
                 "base_path": str(base_path),
                 "graph_path": graph_path,
             })
 
-    data["mediapipe_config_list"] = reconciled
+    data["mediapipe_config_list"] = rendered
 
     # Write back with nice formatting.
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    logger.debug("[registry] reconciled mediapipe entries: desired=%s", list(desired_entries.keys()))
+    logger.debug("[registry] rendered mediapipe entries: desired=%s", list(desired_entries.keys()))

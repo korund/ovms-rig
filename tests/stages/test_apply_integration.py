@@ -720,8 +720,8 @@ def test_deactivate_produces_empty_config(tmp_path: Path, monkeypatch: pytest.Mo
     assert data.get("mediapipe_config_list") == []
 
 
-def test_apply_partial_failure_missing_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Partial failure: one model missing, config.json reflects only successful models."""
+def test_apply_fail_fast_missing_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Fail-fast: missing model directory causes apply to exit without writing config.json."""
     cfg = tmp_path / "ovms.yaml"
     loc = tmp_path / "local.yaml"
     store = tmp_path / "store"
