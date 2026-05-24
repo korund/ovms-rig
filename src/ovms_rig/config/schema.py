@@ -124,7 +124,7 @@ class Profile(_Strict):
 class OvmsConfig(_Strict):
     runtime: Runtime
     repository: dict[str, ModelIdentity]
-    models: dict[str, ModelEntry]
+    models: dict[str, ModelEntry] = Field(default_factory=dict)
     profiles: dict[str, Profile] = Field(default_factory=dict)
 
 

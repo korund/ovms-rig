@@ -22,5 +22,5 @@ def test_cli_help_exits_cleanly():
 def test_cli_lists_all_subcommands():
     runner = CliRunner()
     result = runner.invoke(main, ["--help"])
-    for cmd in ("status", "fetch", "apply", "start", "preflight"):
+    for cmd in ("status", "fetch", "apply", "start"):
         assert cmd in result.output

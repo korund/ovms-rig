@@ -69,9 +69,11 @@ def cmd_status(ctx: click.Context) -> None:
     "fetch",
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
+@click.argument("repository_name")
 @click.pass_context
-def cmd_fetch(ctx: click.Context) -> None:
-    """Pull missing models. Extra args are forwarded to `ovms --pull` verbatim."""
+def cmd_fetch(ctx: click.Context, repository_name: str) -> None:
+    """Pull a single repository entry. Extra args forwarded to `ovms --pull` verbatim."""
+    ctx.obj["repository_name"] = repository_name
     ctx.obj["extras"] = list(ctx.args)
     sys.exit(fetch.run(ctx.obj))
 
@@ -101,21 +103,9 @@ def cmd_apply(ctx: click.Context, dry_run: bool) -> None:
 )
 @click.pass_context
 def cmd_start(ctx: click.Context) -> None:
-    """Run preflight, then start ovms in the foreground. Extra args forwarded to ovms."""
+    """Start ovms in the foreground. Extra args forwarded to ovms."""
     ctx.obj["extras"] = list(ctx.args)
     sys.exit(start.run(ctx.obj))
-
-
-@main.command("preflight")
-@click.pass_context
-def cmd_preflight(ctx: click.Context) -> None:
-    """Sugar: status -> fetch -> apply. Bring the rig to the declared state."""
-    ctx.obj.setdefault("dry_run", False)
-    for stage in (status, fetch, apply):
-        rc = stage.run(ctx.obj)
-        if rc != 0:
-            sys.exit(rc)
-    sys.exit(0)
 
 
 if __name__ == "__main__":

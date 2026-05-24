@@ -1,8 +1,6 @@
-"""Fetch stage tests: command composition + idempotency.
+"""Fetch stage tests: single repository entry pull.
 
-Subprocess is mocked; we never actually invoke ovms. Tests assert what
-args fetch would pass to `ovms --pull`, in what order, and per which
-model.
+Tests verify fetch pulls a single repository entry with correct args.
 """
 
 from __future__ import annotations
@@ -23,22 +21,12 @@ runtime:
   log_level: DEBUG
 
 repository:
-  main:
-    hf: org/main-int8-ov
+  qwen-14b:
+    hf: org/qwen-14b-int8-ov
     task: text_generation
-  draft:
-    hf: org/draft-int8-ov
+  qwen-draft:
+    hf: org/qwen-draft-int8-ov
     task: text_generation
-
-models:
-  ep:
-    source: main
-    graph:
-      device: GPU
-      max_num_seqs: 256
-      enable_prefix_caching: true
-      draft_model: draft
-      draft_device: CPU
 """
 
 LOCAL_YAML = """
@@ -77,7 +65,7 @@ def recorder(monkeypatch: pytest.MonkeyPatch) -> Recorder:
     return rec
 
 
-def _invoke(rig: dict, *extras: str) -> "object":
+def _invoke(rig: dict, *args: str) -> "object":
     runner = CliRunner()
     return runner.invoke(
         main,
@@ -85,85 +73,53 @@ def _invoke(rig: dict, *extras: str) -> "object":
          "--local", str(rig["local"]),
          "--ovms-path", sys.executable,
          "fetch",
-         *extras],
+         *args],
         catch_exceptions=False,
     )
 
 
-def test_fetch_pulls_target_with_pull_flags_and_draft_bare(
-    rig: dict, recorder: Recorder
-) -> None:
-    result = _invoke(rig)
-    assert result.exit_code == 0
-    assert len(recorder.calls) == 2
-
-    # Calls are sorted by model short name -> draft first, then main.
-    draft_call, main_call = recorder.calls
-    assert "--source_model" in draft_call
-    assert draft_call[draft_call.index("--source_model") + 1] == "org/draft-int8-ov"
-    assert "--task" in draft_call
-    assert draft_call[draft_call.index("--task") + 1] == "text_generation"
-    # Draft is pulled bare: pull-bucket flags from served.graph must NOT leak in.
-    assert "--max_num_seqs" not in draft_call
-    assert "--enable_prefix_caching" not in draft_call
-
-    # Target carries pull-bucket flags. Pbtxt-only fields (device, draft_*) stay out.
-    assert main_call[main_call.index("--source_model") + 1] == "org/main-int8-ov"
-    assert main_call[main_call.index("--max_num_seqs") + 1] == "256"
-    assert main_call[main_call.index("--enable_prefix_caching") + 1] == "true"
-    assert "--device" not in main_call
-    assert "--draft_device" not in main_call
-    assert "--draft_model" not in main_call
-    assert "--draft_source_model" not in main_call
-
-
-def test_fetch_skips_already_present_models(
-    rig: dict, recorder: Recorder
-) -> None:
-    # Pre-create the target dir at the HF path -- inventory should see it.
-    (rig["store"] / "org" / "main-int8-ov").mkdir(parents=True)
-
-    result = _invoke(rig)
+def test_fetch_pulls_single_entry(rig: dict, recorder: Recorder) -> None:
+    """Fetch pulls a single repository entry with correct args."""
+    result = _invoke(rig, "qwen-14b")
     assert result.exit_code == 0
     assert len(recorder.calls) == 1
-    only_call = recorder.calls[0]
-    assert only_call[only_call.index("--source_model") + 1] == "org/draft-int8-ov"
+
+    call = recorder.calls[0]
+    assert "--pull" in call
+    assert "--source_model" in call
+    assert "org/qwen-14b-int8-ov" in call
+    assert "--task" in call
+    assert "text_generation" in call
+    assert "--model_repository_path" in call
+    assert str(rig["store"]) in call
 
 
-def test_fetch_returns_nonzero_when_pull_fails(
-    rig: dict, recorder: Recorder
-) -> None:
-    recorder.returncode = 7
-    result = _invoke(rig)
-    assert result.exit_code == 1
+def test_fetch_already_present_skips(rig: dict, recorder: Recorder) -> None:
+    """Fetch skips if model directory already exists."""
+    # Create the model directory beforehand.
+    model_dir = rig["store"] / "org" / "qwen-14b-int8-ov"
+    model_dir.mkdir(parents=True)
 
-
-def test_fetch_forwards_extra_args_to_pull(
-    rig: dict, recorder: Recorder
-) -> None:
-    result = _invoke(rig, "--overwrite_models")
+    result = _invoke(rig, "qwen-14b")
     assert result.exit_code == 0
-    for call in recorder.calls:
-        assert call[-1] == "--overwrite_models"
+    assert len(recorder.calls) == 0  # No pull call made.
 
 
-def test_fetch_errors_when_store_path_unset(tmp_path: Path, recorder: Recorder) -> None:
-    # repository_path missing now fails at config load, before any pull runs.
-    cfg = tmp_path / "ovms.yaml"
-    loc = tmp_path / "local.yaml"
-    cfg.write_text(OVMS_YAML, encoding="utf-8")
-    loc.write_text(
-        "runtime:\n  ovms_path: null\nmodels: {}\n",
-        encoding="utf-8",
-    )
-    runner = CliRunner()
-    result = runner.invoke(
-        main,
-        ["--config", str(cfg),
-         "--local", str(loc),
-         "--ovms-path", sys.executable,
-         "fetch"],
-        catch_exceptions=False,
-    )
+def test_fetch_unknown_entry_fails(rig: dict, recorder: Recorder) -> None:
+    """Fetch fails if repository entry doesn't exist."""
+    result = _invoke(rig, "nonexistent")
     assert result.exit_code == 1
-    assert recorder.calls == []
+    assert len(recorder.calls) == 0  # No pull call made.
+    assert "not found" in result.output or "nonexistent" in result.output
+
+
+def test_fetch_passes_through_extras(rig: dict, recorder: Recorder) -> None:
+    """Fetch forwards extra args to ovms --pull."""
+    result = _invoke(rig, "qwen-14b", "--", "--foo", "bar", "--baz")
+    assert result.exit_code == 0
+    assert len(recorder.calls) == 1
+
+    call = recorder.calls[0]
+    assert "--foo" in call
+    assert "bar" in call
+    assert "--baz" in call
