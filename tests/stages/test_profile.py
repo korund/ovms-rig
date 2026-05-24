@@ -229,3 +229,67 @@ def test_backup_created_on_activate(rig: dict, monkeypatch: pytest.MonkeyPatch) 
     backup_data = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
     assert "default" in backup_data.get("profiles", {})
     assert "bench" in backup_data.get("profiles", {})
+
+
+def test_activate_atomic_write_preserves_original_on_write_failure(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """os.replace failure leaves original ovms.yaml unchanged."""
+    monkeypatch.chdir(rig["tmp"])
+
+    # Record original content before any activation attempt.
+    original_content = rig["config"].read_text(encoding="utf-8")
+
+    # Mock os.replace to raise OSError.
+    import os
+    original_replace = os.replace
+    call_count = [0]
+
+    def mock_replace(src, dst):
+        call_count[0] += 1
+        # Fail on the config_path replace (not on other paths).
+        if str(dst) == str(rig["config"]):
+            raise OSError("Simulated write failure")
+        return original_replace(src, dst)
+
+    monkeypatch.setattr("os.replace", mock_replace)
+
+    result = _invoke(rig, "activate", "default")
+    # Should fail due to write failure.
+    assert result.exit_code == 1
+
+    # Original content must be completely unchanged.
+    current_content = rig["config"].read_text(encoding="utf-8")
+    assert current_content == original_content, "Original ovms.yaml should be unchanged after write failure"
+
+    # Backup should exist (created before write attempt).
+    backups = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
+    assert len(backups) >= 1, "Backup should be created before write"
+
+
+def test_activate_rolls_back_yaml_when_apply_fails(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When apply.run fails, ovms.yaml is rolled back to original state."""
+    monkeypatch.chdir(rig["tmp"])
+
+    # Record original state: default should be active initially.
+    original_data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
+    assert original_data["profiles"]["default"]["active"] is True
+    assert original_data["profiles"]["bench"]["active"] is False
+
+    # Mock apply.run to fail.
+    from ovms_rig.stages import apply
+    monkeypatch.setattr("ovms_rig.stages.apply.run", lambda ctx: 1)
+
+    # Attempt to activate bench (which will fail when apply runs).
+    result = _invoke(rig, "activate", "bench")
+    assert result.exit_code == 1
+
+    # ovms.yaml should be rolled back to original state (default active, bench inactive).
+    rolled_back_data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
+    assert rolled_back_data["profiles"]["default"]["active"] is True, "Should rollback to original state"
+    assert rolled_back_data["profiles"]["bench"]["active"] is False, "Should rollback to original state"
+
+    # Backup should exist.
+    backups = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
+    assert len(backups) >= 1, "Backup should be created"
+
+    # Log should mention rollback.
+    assert "rolled back" in result.output.lower() or "apply failed" in result.output.lower()

@@ -7,6 +7,8 @@ via apply stage.
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,13 +85,28 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
         logger.error("failed to backup ovms.yaml: %s", e)
         return 1
 
-    # Write updated ovms.yaml with safe_dump (sort_keys=False, allow_unicode=False).
+    # Serialize new YAML to string.
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, sort_keys=False, allow_unicode=False)
+        new_yaml_str = yaml.dump(data, sort_keys=False, allow_unicode=False)
+    except yaml.YAMLError as e:
+        logger.error("failed to serialize ovms.yaml: %s", e)
+        return 1
+
+    # Write to temp file, then atomically replace.
+    temp_path = config_path.parent / f"{config_path.name}.tmp.{timestamp}"
+    try:
+        temp_path.write_text(new_yaml_str, encoding="utf-8")
+        logger.debug("[profile] wrote temp file: %s", temp_path)
+        # Atomic replace: os.replace is atomic on the same filesystem.
+        os.replace(temp_path, config_path)
         logger.info("[profile] updated ovms.yaml")
     except (OSError, yaml.YAMLError) as e:
         logger.error("failed to write ovms.yaml: %s", e)
+        # Clean up temp file if it exists.
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return 1
 
     # Call apply.run to rebuild config.json and sibling graphs.
@@ -100,8 +117,14 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
 
     rc = apply.run(apply_ctx)
     if rc != 0:
-        logger.error("[profile] apply failed while rebuilding config")
-        return 1
+        logger.error("[profile] apply failed while rebuilding config (rc=%d)", rc)
+        # Rollback: restore ovms.yaml from backup.
+        try:
+            shutil.copy(backup_path, config_path)
+            logger.info("[profile] apply failed (rc=%d), rolled back ovms.yaml from %s", rc, backup_path)
+        except OSError as e:
+            logger.error("[profile] failed to rollback ovms.yaml: %s", e)
+        return rc
 
     # Log final state.
     if target is not None:
