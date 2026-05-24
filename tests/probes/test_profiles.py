@@ -76,6 +76,9 @@ def test_profiles_with_active(tmp_path):
     assert "active profile" in result.summary
     assert result.details["profiles"]["default"]["active"] is True
     assert result.details["profiles"]["bench"]["active"] is False
+    # Verify probe actually computed the active profile (not just reading from ovms).
+    # The summary should contain the name of the active profile as computed by probe.
+    assert "active profile: 'default'" in result.summary
 
 
 def test_profiles_model_membership(tmp_path):

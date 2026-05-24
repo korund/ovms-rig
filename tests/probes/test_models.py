@@ -66,15 +66,42 @@ def test_models_valid_source(tmp_path):
     assert result.details["models"]["ep"]["source_status"] == "ok"
 
 
-def test_models_profile_membership(tmp_path):
-    """Models correctly report which profiles contain them."""
+def test_models_orphan_not_in_any_profile(tmp_path):
+    """Models not in any profile report empty profiles list."""
+    ovms_yaml = """
+runtime:
+  rest_port: 8000
+
+repository:
+  main:
+    hf: org/main
+    task: text_generation
+  main2:
+    hf: org/main2
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+  orphan:
+    source: main2
+    graph:
+      device: CPU
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
     cfg = tmp_path / "ovms.yaml"
-    cfg.write_text(OVMS_YAML_MULTIPLE_MODELS, encoding="utf-8")
+    cfg.write_text(ovms_yaml, encoding="utf-8")
     ovms = load_ovms(cfg)
 
     result = models.check(ovms)
     assert result.status == "ok"
-    # ep is in default and bench
-    assert result.details["models"]["ep"]["profiles"] == ["default", "bench"]
-    # draft_ep is only in bench
-    assert result.details["models"]["draft_ep"]["profiles"] == ["bench"]
+    # ep is in default profile
+    assert result.details["models"]["ep"]["profiles"] == ["default"]
+    # orphan is not in any profile
+    assert result.details["models"]["orphan"]["profiles"] == []

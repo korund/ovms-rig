@@ -67,7 +67,11 @@ def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
             name=NAME,
             status="ok",
             summary=summary,
-            details={"active_profile": active_profile_name, "live_models": sorted(live_models)},
+            details={
+                "active_profile": active_profile_name,
+                "expected_models": sorted(active_models),
+                "live_models": sorted(live_models),
+            },
         )
 
     # Mismatch.

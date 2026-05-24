@@ -124,6 +124,9 @@ def test_live_config_matches_active_profile(tmp_path):
     assert result.status == "ok"
     assert "OK: 1 model(s)" in result.summary
     assert result.details["active_profile"] == "default"
+    # Verify probe computed matching sets (not just the count).
+    assert set(result.details["expected_models"]) == {"ep"}
+    assert set(result.details["live_models"]) == {"ep"}
 
 
 def test_live_config_extra_model_in_live(tmp_path):
@@ -183,3 +186,50 @@ def test_live_config_missing_model_in_live(tmp_path):
     assert result.status == "warn"
     assert "mismatch" in result.summary
     assert "ep" in result.details["missing_from_live"]
+
+
+def test_live_config_active_profile_empty_models(tmp_path):
+    """Active profile with empty models list -> ok with empty config.json."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    # YAML with active profile that has no models.
+    ovms_yaml = """
+runtime:
+  rest_port: 8000
+
+repository:
+  main:
+    hf: org/main
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+
+profiles:
+  empty_profile:
+    models: []
+    active: true
+"""
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    ovms = load_ovms(cfg)
+    local = load_local(loc)
+
+    # Create config.json with empty list (matches empty active profile).
+    config_json = store / "config.json"
+    config_data = {"mediapipe_config_list": []}
+    config_json.write_text(json.dumps(config_data), encoding="utf-8")
+
+    result = live_config.check(ovms, local)
+    assert result.status == "ok"
+    assert "empty config" in result.summary or "OK" in result.summary
+    assert result.details["active_profile"] == "empty_profile"
+    assert set(result.details["expected_models"]) == set()
+    assert set(result.details["live_models"]) == set()
