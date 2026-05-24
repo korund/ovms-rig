@@ -5,8 +5,8 @@ Unit tests cover:
 - signal forwarder (mock subprocess, verify terminate() is called on SIGTERM)
 
 Integration tests cover:
-- precheck hard error -> nonzero exit, no Popen called
-- precheck soft warn -> Popen still called
+- blocking probe hard error -> nonzero exit, no Popen called
+- diagnostic probes not checked in start (soft warns do not block launch)
 """
 
 from __future__ import annotations
@@ -214,7 +214,7 @@ def test_posix_sigint_calls_send_signal():
 
 
 # ---------------------------------------------------------------------------
-# Integration: precheck hard error -> Popen not called
+# Integration: blocking probe error -> Popen not called
 # ---------------------------------------------------------------------------
 
 OVMS_YAML = """
@@ -264,8 +264,8 @@ def rig(tmp_path: Path) -> dict:
     }
 
 
-def test_precheck_hard_error_prevents_launch(rig: dict, tmp_path: Path) -> None:
-    """Binary not found -> precheck hard error -> launch.run returns 1, Popen not called."""
+def test_blocking_probe_error_prevents_launch(rig: dict, tmp_path: Path) -> None:
+    """Binary not found (blocking probe error) -> launch.run returns 1, Popen not called."""
     # Force a hard error: point --ovms-path at a file that does not exist.
     rig["ovms_path"] = str(tmp_path / "does-not-exist-ovms")
     with patch("ovms_rig.stages.start.launch.subprocess.Popen") as mock_popen:
@@ -275,9 +275,9 @@ def test_precheck_hard_error_prevents_launch(rig: dict, tmp_path: Path) -> None:
     mock_popen.assert_not_called()
 
 
-def test_precheck_soft_warn_continues_to_launch(rig: dict, tmp_path: Path) -> None:
-    """Missing models (soft warn) should NOT block launch."""
-    # Provide a real binary path (sys.executable) so hard checks pass.
+def test_diagnostic_probes_not_checked_in_start(rig: dict, tmp_path: Path) -> None:
+    """Diagnostic probes (live config, models inventory) are not checked before start."""
+    # Provide a real binary path (sys.executable) so blocking checks pass.
     rig["ovms_path"] = sys.executable
 
     # Seed a config.json so the store path is found (apply would create it).
@@ -291,7 +291,7 @@ def test_precheck_soft_warn_continues_to_launch(rig: dict, tmp_path: Path) -> No
         from ovms_rig.stages.start.launch import run
         rc = run(rig)
 
-    # Popen was called (launch proceeded despite missing-models warning).
+    # Popen was called (launch proceeded even though diagnostic probe would fail).
     mock_popen.assert_called_once()
     # Exit code mirrors the fake process.
     assert rc == 0

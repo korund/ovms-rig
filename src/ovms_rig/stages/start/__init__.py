@@ -1,13 +1,9 @@
-"""Start stage: precheck then run ovms in the foreground.
+"""Start stage: run blocking probes, then exec ovms in the foreground.
 
-Precheck calls the status stage internally. Hard errors from status
-(binary not found, config invalid, port in use) fail immediately. Soft
-checks (missing models, live config mismatch) emit warnings and continue.
-
-After precheck the stage builds the ovms command, inherits the process
-environment from env.build_env(), forks ovms via subprocess.Popen, and
-stays alive as the parent -- forwarding SIGTERM/SIGINT to ovms and
-exiting with the same return code.
+Blocking probes (declaration, ovms binary, models, port) must pass before launch.
+Diagnostic probes are not run here -- `rig status` shows the full picture.
+The process inherits env from env.build_env(), forks ovms via subprocess.Popen, and
+stays alive forwarding SIGTERM/SIGINT.
 """
 
 from __future__ import annotations
