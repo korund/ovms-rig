@@ -7,8 +7,7 @@ Steps per model entry in active profile:
 4. Patch sibling copy (device, draft_device, draft_models_path).
 5. Merge generation_config.json overrides if declared on model.
 6. Register endpoint via direct config.json JSON write (not ovms CLI).
-7. Backup config.json after registration (live run only).
-8. Cleanup obsolete sibling-graphs from previous activations.
+7. Cleanup obsolete sibling-graphs from previous activations.
 
 Atomicity: snapshot of config.json is taken before processing begins.
 On any error during model processing, apply fails immediately with rollback:
@@ -246,12 +245,9 @@ def run(ctx: dict) -> int:
 
     # Render config.json from active_models (not processed_models).
     # This guarantees config.json is always complete projection of active profile.
+    # Failure recovery is handled by in-memory snapshot and rollback; no disk backup needed.
     if not dry_run:
         config_json_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Backup config.json before mutation (live run only).
-        if config_json_path.exists():
-            _backup_file(config_json_path, timestamp)
 
     # Build desired entries dict from active_models (not processed_models).
     # If a model failed, it won't reach here due to fail-fast above.

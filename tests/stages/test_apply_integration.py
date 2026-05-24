@@ -283,27 +283,6 @@ class TestLiveRun:
         assert entries[0]["name"] == "ep"
         assert "graph.ep.pbtxt" in entries[0]["graph_path"]
 
-    def test_live_run_config_backup_created(self, rig: dict,
-                                           monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.chdir(rig["tmp"])
-        # Pre-populate config.json with known content (original state).
-        store = rig["store"]
-        config_path = store / "config.json"
-        original_content = '{"model_config_list": []}'
-        config_path.write_text(original_content, encoding="utf-8")
-
-        result = _invoke(rig, "activate", "default")
-        assert result.exit_code == 0
-        # Backup file must be created next to config.json with suffix.
-        backups = list(store.glob("config.json.bak.*"))
-        assert len(backups) == 1, f"Expected exactly 1 backup, found: {backups}"
-        # Backup content must match original (before apply mutation).
-        backup_path = backups[0]
-        backup_content = backup_path.read_text(encoding="utf-8")
-        assert backup_content == original_content, (
-            f"Backup should contain original content, got: {backup_content}"
-        )
-
     def test_live_run_fails_if_model_dir_missing(self, rig: dict,
                                                 monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(rig["tmp"])
