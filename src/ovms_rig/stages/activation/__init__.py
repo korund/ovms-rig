@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from ovms_rig import log as logging_setup
-from ovms_rig.config import ConfigError, load_local, load_ovms
+from ovms_rig.config import ConfigError, load_declaration
 from ovms_rig.stages.activation import apply
 
 logger = logging.getLogger(__name__)
@@ -35,12 +35,13 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
         Exit code (0 on success, 1 on error).
     """
     config_path = Path(ctx["config_path"])
+    local_path = Path(ctx["local_path"])
     cli_level: str | None = ctx.get("log_level")
 
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms = load_ovms(config_path)
+        ovms, _ = load_declaration(config_path, local_path)
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1

@@ -15,9 +15,7 @@ from ovms_rig import log as logging_setup
 from ovms_rig.config import (
     ConfigError,
     ModelIdentity,
-    OvmsConfig,
-    load_local,
-    load_ovms,
+    load_declaration,
 )
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
@@ -36,8 +34,7 @@ def run(ctx: dict) -> int:
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms = load_ovms(config_path)
-        local = load_local(local_path)
+        ovms, local = load_declaration(config_path, local_path)
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1

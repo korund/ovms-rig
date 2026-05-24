@@ -89,3 +89,9 @@ def _check_profiles(cfg: OvmsConfig, source: Path) -> None:
             f"{source}: at most one profile can be active, got {len(active_profiles)}: "
             f"{active_profiles}"
         )
+
+
+def load_declaration(config_path: Path, local_path: Path) -> tuple[OvmsConfig, LocalConfig]:
+    ovms = load_ovms(config_path)
+    local = load_local(local_path)
+    return ovms, local

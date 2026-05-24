@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ovms_rig import log as logging_setup
-from ovms_rig.config import ConfigError, load_local, load_ovms
+from ovms_rig.config import ConfigError, load_declaration
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.start.precheck import run as precheck_run
@@ -33,8 +33,7 @@ def run(ctx: dict) -> int:
     extras: list[str] = list(ctx.get("extras") or [])
 
     try:
-        ovms_cfg = load_ovms(config_path)
-        local = load_local(local_path)
+        ovms_cfg, local = load_declaration(config_path, local_path)
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1

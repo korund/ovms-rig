@@ -5,7 +5,7 @@ The package re-exports the public API so callers can write
 given symbol lives in `schema` or `loader`.
 """
 
-from ovms_rig.config.loader import ConfigError, load_local, load_ovms
+from ovms_rig.config.loader import ConfigError, load_declaration, load_local, load_ovms
 from ovms_rig.config.schema import (
     LocalConfig,
     LocalModels,
@@ -29,6 +29,7 @@ __all__ = [
     "OvmsConfig",
     "Profile",
     "Runtime",
+    "load_declaration",
     "load_local",
     "load_ovms",
 ]
