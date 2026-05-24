@@ -106,7 +106,14 @@ def reconcile_mediapipe_entries(
     entries = data["mediapipe_config_list"]
 
     # Build map of existing entries by name for efficient lookup.
-    existing_by_name = {e.get("name"): e for e in entries if e.get("name")}
+    # Skip entries without a name (warn if found).
+    existing_by_name = {}
+    for e in entries:
+        entry_name = e.get("name")
+        if entry_name is None:
+            logger.warning("[registry] skipping entry without name in existing config.json: %s", e)
+            continue
+        existing_by_name[entry_name] = e
 
     # Reconcile: keep only entries in desired_entries, update or add as needed.
     reconciled = []

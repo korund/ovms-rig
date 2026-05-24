@@ -148,6 +148,29 @@ def run(ctx: dict) -> int:
         overrides = entry.generation
         if overrides:
             genconfig_path = target_dir / "generation_config.json"
+
+            # For dry-run, log intention without requiring file to exist.
+            if dry_run:
+                dest_genconfig = _BUILD_DIR / model_identity.hf / "generation_config.json"
+                logger.info(
+                    "[apply] %s: would read generation overrides from %s",
+                    model_name, genconfig_path,
+                )
+                dest_genconfig.parent.mkdir(parents=True, exist_ok=True)
+                # Write proposed result to build/ (assumes pristine exists in dry-run context).
+                if genconfig_path.exists():
+                    try:
+                        existing_text = genconfig_path.read_text(encoding="utf-8")
+                        new_genconfig = merge_generation(existing_text, overrides)
+                        dest_genconfig.write_text(new_genconfig, encoding="utf-8")
+                    except (ValueError, OSError) as exc:
+                        logger.warning(
+                            "[apply] %s: could not preview generation_config merge: %s",
+                            model_name, exc,
+                        )
+                continue
+
+            # Live run: file must exist.
             if not genconfig_path.exists():
                 logger.error(
                     "[apply] %s: generation_config.json not found at %s",
@@ -156,15 +179,10 @@ def run(ctx: dict) -> int:
                 failures.append(model_name)
                 continue
 
-            # Compute destination (live or build/).
-            if dry_run:
-                dest_genconfig = _BUILD_DIR / model_identity.hf / "generation_config.json"
-            else:
-                dest_genconfig = genconfig_path
+            dest_genconfig = genconfig_path
 
             # Backup before write (live run only).
-            if not dry_run:
-                _backup_file(genconfig_path, timestamp)
+            _backup_file(genconfig_path, timestamp)
 
             # Merge and write.
             try:
@@ -178,7 +196,6 @@ def run(ctx: dict) -> int:
                 failures.append(model_name)
                 continue
 
-            dest_genconfig.parent.mkdir(parents=True, exist_ok=True)
             dest_genconfig.write_text(new_genconfig, encoding="utf-8")
             logger.info(
                 "[apply] %s: generation_config.json written to %s",
@@ -248,7 +265,14 @@ def _cleanup_obsolete_sibling_graphs(store: Path, active_models: set[str], ovms:
 
         for sibling_graph in model_dir.glob("graph.*.pbtxt"):
             # Extract model name from filename: graph.<name>.pbtxt
-            name = sibling_graph.name[len("graph."):-len(".pbtxt")]
+            # Use Path.stem to remove .pbtxt, then removeprefix to get name.
+            stem = sibling_graph.stem  # removes .pbtxt
+            name = stem.removeprefix("graph.")
+
+            # Skip if name is empty (malformed filename).
+            if not name:
+                logger.debug("[cleanup] skipping malformed sibling-graph: %s", sibling_graph)
+                continue
 
             # If model not in active_models, remove the sibling-graph.
             if name not in active_models:
