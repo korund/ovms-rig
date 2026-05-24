@@ -11,10 +11,10 @@ from ovms_rig.config.schema import (
     LocalModels,
     LocalRuntime,
     LogLevel,
+    ModelEntry,
     ModelIdentity,
     OvmsConfig,
     Runtime,
-    ServedEntry,
 )
 
 __all__ = [
@@ -23,10 +23,10 @@ __all__ = [
     "LocalModels",
     "LocalRuntime",
     "LogLevel",
+    "ModelEntry",
     "ModelIdentity",
     "OvmsConfig",
     "Runtime",
-    "ServedEntry",
     "load_local",
     "load_ovms",
 ]

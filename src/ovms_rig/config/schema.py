@@ -107,12 +107,11 @@ class Graph(_Strict):
                 if getattr(self, name) is not None}
 
 
-class ServedEntry(_Strict):
-    name: str
-    model: str
+class ModelEntry(_Strict):
+    source: str
     graph: Graph
     # Overrides merged into the model's generation_config.json at apply time.
-    # Lives on the served entry (not the model) because it is a deployment-level
+    # Lives on the model entry (not the model identity) because it is a deployment-level
     # override, like graph.device. Passthrough dict; values are not validated.
     generation: dict[str, int | float | bool | str | list[Any]] | None = None
 
@@ -120,7 +119,7 @@ class ServedEntry(_Strict):
 class OvmsConfig(_Strict):
     runtime: Runtime
     repository: dict[str, ModelIdentity]
-    served: list[ServedEntry]
+    models: dict[str, ModelEntry]
 
 
 # ----- local.yaml -----

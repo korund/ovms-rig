@@ -1,9 +1,9 @@
 """Apply stage: copy pristine graph.pbtxt to sibling + patch + register.
 
-Steps per served entry:
+Steps per model entry:
 1. Resolve target model directory (store/<hf_org>/<hf_repo>).
 2. Read pristine graph.pbtxt (never mutated).
-3. Create sibling copy graph.<served_name>.pbtxt.
+3. Create sibling copy graph.<model_name>.pbtxt.
 4. Patch sibling copy (device, draft_device, draft_models_path).
 5. Merge generation_config.json overrides if declared on model.
 6. Register endpoint via direct config.json JSON write (not ovms CLI).
@@ -66,25 +66,25 @@ def run(ctx: dict) -> int:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     failures: list[str] = []
 
-    for entry in ovms.served:
-        model_identity = ovms.repository[entry.model]
+    for model_name, entry in ovms.models.items():
+        model_identity = ovms.repository[entry.source]
         target_dir = model_dir(store, model_identity.hf)
 
         if not target_dir.is_dir():
             logger.error(
                 "[apply] %s: model directory not found at %s; run fetch first",
-                entry.name, target_dir,
+                model_name, target_dir,
             )
-            failures.append(entry.name)
+            failures.append(model_name)
             continue
 
         pristine_pbtxt = target_dir / "graph.pbtxt"
         if not pristine_pbtxt.exists():
             logger.error(
                 "[apply] %s: graph.pbtxt not found at %s",
-                entry.name, pristine_pbtxt,
+                model_name, pristine_pbtxt,
             )
-            failures.append(entry.name)
+            failures.append(model_name)
             continue
 
         # Resolve draft path if declared.
@@ -99,31 +99,31 @@ def run(ctx: dict) -> int:
         )
 
         # Compute destination path for sibling-copy (live or build/).
-        # Sibling naming: graph.<served_name>.pbtxt in the same directory as pristine.
+        # Sibling naming: graph.<model_name>.pbtxt in the same directory as pristine.
         if dry_run:
-            sibling_pbtxt = _BUILD_DIR / model_identity.hf / f"graph.{entry.name}.pbtxt"
+            sibling_pbtxt = _BUILD_DIR / model_identity.hf / f"graph.{model_name}.pbtxt"
         else:
-            sibling_pbtxt = target_dir / f"graph.{entry.name}.pbtxt"
+            sibling_pbtxt = target_dir / f"graph.{model_name}.pbtxt"
 
         # Read pristine (never mutate).
         try:
             pristine_content = pristine_pbtxt.read_text(encoding="utf-8")
         except OSError as exc:
-            logger.error("[apply] %s: failed to read pristine graph.pbtxt: %s", entry.name, exc)
-            failures.append(entry.name)
+            logger.error("[apply] %s: failed to read pristine graph.pbtxt: %s", model_name, exc)
+            failures.append(model_name)
             continue
 
         # Patch the pristine content (goes to sibling, not to pristine itself).
         try:
             patched_content = patch(pristine_content, fields)
         except (ValueError, OSError) as exc:
-            logger.error("[apply] %s: pbtxt patch failed: %s", entry.name, exc)
-            failures.append(entry.name)
+            logger.error("[apply] %s: pbtxt patch failed: %s", model_name, exc)
+            failures.append(model_name)
             continue
 
         sibling_pbtxt.parent.mkdir(parents=True, exist_ok=True)
         sibling_pbtxt.write_text(patched_content, encoding="utf-8")
-        logger.info("[apply] %s: graph.%s.pbtxt written to %s", entry.name, entry.name, sibling_pbtxt)
+        logger.info("[apply] %s: graph.%s.pbtxt written to %s", model_name, model_name, sibling_pbtxt)
 
         # Handle generation_config.json if overrides are declared on the entry.
         overrides = entry.generation
@@ -132,9 +132,9 @@ def run(ctx: dict) -> int:
             if not genconfig_path.exists():
                 logger.error(
                     "[apply] %s: generation_config.json not found at %s",
-                    entry.name, genconfig_path,
+                    model_name, genconfig_path,
                 )
-                failures.append(entry.name)
+                failures.append(model_name)
                 continue
 
             # Compute destination (live or build/).
@@ -154,16 +154,16 @@ def run(ctx: dict) -> int:
             except (ValueError, OSError) as exc:
                 logger.error(
                     "[apply] %s: generation_config merge failed: %s",
-                    entry.name, exc,
+                    model_name, exc,
                 )
-                failures.append(entry.name)
+                failures.append(model_name)
                 continue
 
             dest_genconfig.parent.mkdir(parents=True, exist_ok=True)
             dest_genconfig.write_text(new_genconfig, encoding="utf-8")
             logger.info(
                 "[apply] %s: generation_config.json written to %s",
-                entry.name, dest_genconfig,
+                model_name, dest_genconfig,
             )
 
         # Step 6: register in config.json via direct JSON write.
@@ -183,13 +183,13 @@ def run(ctx: dict) -> int:
         try:
             register_mediapipe_entry(
                 config_path=config_json_path,
-                entry_name=entry.name,
+                entry_name=model_name,
                 base_path=target_dir.resolve(),
-                graph_path=f"graph.{entry.name}.pbtxt",
+                graph_path=f"graph.{model_name}.pbtxt",
             )
         except (OSError, ValueError) as exc:
-            logger.error("[apply] %s: failed to register in config.json: %s", entry.name, exc)
-            failures.append(entry.name)
+            logger.error("[apply] %s: failed to register in config.json: %s", model_name, exc)
+            failures.append(model_name)
             continue
 
     if failures:

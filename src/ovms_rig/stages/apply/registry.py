@@ -5,9 +5,9 @@ the config.json directly and upserts mediapipe_config_list entries.
 
 Entry structure:
   {
-    "name": "<served_entry.name>",
+    "name": "<model_name>",
     "base_path": "<absolute_path_to_model_directory>",
-    "graph_path": "graph.<served_name>.pbtxt"  (relative from base_path)
+    "graph_path": "graph.<model_name>.pbtxt"  (relative from base_path)
   }
 
 Idempotency: if an entry with the same name already exists, it is updated
@@ -32,10 +32,10 @@ def register_mediapipe_entry(
     """Register a mediapipe_config_list entry in config.json.
 
     config_path: path to config.json (created if missing).
-    entry_name: name of the served endpoint.
+    entry_name: name of the model entry.
     base_path: absolute path to model directory.
     graph_path: relative path from base_path to the graph file
-                (typically "graph.<served_name>.pbtxt").
+                (typically "graph.<model_name>.pbtxt").
 
     Raises OSError if file I/O fails, ValueError if JSON is malformed.
     """

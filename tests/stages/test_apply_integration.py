@@ -2,7 +2,7 @@
 
 Tests verify:
 - pristine graph.pbtxt is never mutated.
-- sibling copy (graph.<served_name>.pbtxt) is created with patches applied.
+- sibling copy (graph.<model_name>.pbtxt) is created with patches applied.
 - config.json is written with mediapipe_config_list entries.
 - dry-run writes to build/, does not touch live files.
 - live run writes to store and backs up config.json.
@@ -36,9 +36,9 @@ repository:
     hf: OpenVINO/draft-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
       draft_model: draft
@@ -274,9 +274,9 @@ repository:
     hf: OpenVINO/main-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
     generation:
@@ -333,9 +333,9 @@ repository:
     hf: OpenVINO/main-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
     generation:
@@ -391,9 +391,9 @@ repository:
     hf: OpenVINO/main-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
     generation:
@@ -441,9 +441,9 @@ repository:
     hf: OpenVINO/main-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
 """
@@ -492,9 +492,9 @@ repository:
     hf: OpenVINO/main-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
     generation: {}

@@ -24,9 +24,9 @@ repository:
     hf: org/draft-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
       draft_model: draft

@@ -21,9 +21,9 @@ repository:
     hf: org/draft-int8-ov
     task: text_generation
 
-served:
-  - name: ep
-    model: main
+models:
+  ep:
+    source: main
     graph:
       device: GPU
       draft_model: draft
@@ -40,12 +40,12 @@ def test_load_ovms_happy_path(tmp_path: Path) -> None:
     cfg = load_ovms(_write(tmp_path / "ovms.yaml", VALID_OVMS))
     assert cfg.runtime.rest_port == 8000
     assert set(cfg.repository) == {"main", "draft"}
-    assert cfg.served[0].graph.draft_model == "draft"
+    assert cfg.models["ep"].graph.draft_model == "draft"
 
 
 def test_load_ovms_dangling_model_reference(tmp_path: Path) -> None:
-    bad = VALID_OVMS.replace("model: main", "model: ghost")
-    with pytest.raises(ConfigError, match="unknown model 'ghost'"):
+    bad = VALID_OVMS.replace("source: main", "source: ghost")
+    with pytest.raises(ConfigError, match="unknown source 'ghost'"):
         load_ovms(_write(tmp_path / "ovms.yaml", bad))
 
 

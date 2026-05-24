@@ -45,25 +45,25 @@ def _read_yaml(path: Path) -> dict:
 def _check_references(cfg: OvmsConfig, source: Path) -> None:
     known = set(cfg.repository)
     targets: dict[str, str] = {}
-    for entry in cfg.served:
-        if entry.model not in known:
+    for name, entry in cfg.models.items():
+        if entry.source not in known:
             raise ConfigError(
-                f"{source}: served entry '{entry.name}' references unknown model "
-                f"'{entry.model}' (declared models: {sorted(known)})"
+                f"{source}: model '{name}' references unknown source "
+                f"'{entry.source}' (declared models: {sorted(known)})"
             )
-        # One model -> one target. The pull-bucket fields under served.graph
-        # bake into the model's pbtxt; multiple served entries targeting the
-        # same model would race over a single file.
-        if entry.model in targets:
+        # One model -> one target. The pull-bucket fields under model.graph
+        # bake into the model's pbtxt; multiple model entries targeting the
+        # same source would race over a single file.
+        if entry.source in targets:
             raise ConfigError(
-                f"{source}: model '{entry.model}' is target of both "
-                f"'{targets[entry.model]}' and '{entry.name}'; "
-                "one model can serve at most one entry"
+                f"{source}: source '{entry.source}' is target of both "
+                f"'{targets[entry.source]}' and '{name}'; "
+                "one source can be target of at most one model entry"
             )
-        targets[entry.model] = entry.name
+        targets[entry.source] = name
         draft = entry.graph.draft_model
         if draft is not None and draft not in known:
             raise ConfigError(
-                f"{source}: served entry '{entry.name}' references unknown "
+                f"{source}: model '{name}' references unknown "
                 f"draft_model '{draft}' (declared models: {sorted(known)})"
             )

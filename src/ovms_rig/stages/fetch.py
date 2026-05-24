@@ -9,8 +9,8 @@ call, without `--draft_source_model`. Target and draft end up as siblings
 under `<store>/<hf_org>/<hf_repo>/`. The target->draft binding is wired
 later in apply (patching `draft_models_path` in the target's pbtxt).
 
-Pull-bucket fields from `served.graph` are forwarded as CLI flags only
-when pulling a model that is *target* of a served entry. Draft-only
+Pull-bucket fields from `model_entry.graph` are forwarded as CLI flags only
+when pulling a model that is a *source* of a model entry. Draft-only
 models pull with no graph customization.
 """
 
@@ -27,7 +27,7 @@ from ovms_rig.config import (
     load_local,
     load_ovms,
 )
-from ovms_rig.config.schema import ModelIdentity, ServedEntry
+from ovms_rig.config.schema import ModelEntry, ModelIdentity
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
 
@@ -71,8 +71,8 @@ def run(ctx: dict) -> int:
         if dest.is_dir():
             logger.info("[skip] %s (already present at %s)", name, dest)
             continue
-        served = targets.get(name)
-        rc = _pull_one(binary, env, store, name, model, served, extras)
+        model_entry = targets.get(name)
+        rc = _pull_one(binary, env, store, name, model, model_entry, extras)
         if rc != 0:
             failures.append(name)
 
@@ -82,8 +82,8 @@ def run(ctx: dict) -> int:
     return 0
 
 
-def _targets_by_model(ovms: OvmsConfig) -> dict[str, ServedEntry]:
-    return {entry.model: entry for entry in ovms.served}
+def _targets_by_model(ovms: OvmsConfig) -> dict[str, ModelEntry]:
+    return {entry.source: entry for name, entry in ovms.models.items()}
 
 
 def _pull_one(
@@ -92,7 +92,7 @@ def _pull_one(
     store: Path,
     name: str,
     model: ModelIdentity,
-    served: ServedEntry | None,
+    model_entry: ModelEntry | None,
     extras: list[str],
 ) -> int:
     args: list[str] = [
@@ -110,8 +110,8 @@ def _pull_one(
             "support pinning; pulling latest from HF main",
             name, model.revision,
         )
-    if served is not None:
-        for key, value in served.graph.pull_flags().items():
+    if model_entry is not None:
+        for key, value in model_entry.graph.pull_flags().items():
             args += [f"--{key}", _format(value)]
     args += extras
 

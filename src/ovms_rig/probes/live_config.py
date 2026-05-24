@@ -1,4 +1,4 @@
-"""Check presence of live OVMS config files for declared served entries.
+"""Check presence of live OVMS config files for declared model entries.
 
 Content comparison vs the declaration is apply's job. Here we only report
 which files exist on disk.
@@ -25,15 +25,16 @@ def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
         )
 
     present: dict[str, list[str]] = {}
-    for entry in ovms.served:
-        model_dir = store / entry.model
+    for model_name, entry in ovms.models.items():
+        source_identity = ovms.repository[entry.source]
+        model_dir = store / source_identity.hf
         files = [
             f for f in (CONFIG_JSON, GRAPH_PBTXT) if (model_dir / f).is_file()
         ]
-        present[entry.name] = files
+        present[model_name] = files
 
     total_files = sum(len(v) for v in present.values())
-    expected = 2 * len(ovms.served)
+    expected = 2 * len(ovms.models)
     hint = (
         "run `ovms-rig apply` to materialize live config"
         if total_files < expected
@@ -43,6 +44,6 @@ def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
         name=NAME,
         status="ok",
         summary=f"{total_files}/{expected} files present",
-        details={"per_served": present},
+        details={"per_model": present},
         hint=hint,
     )

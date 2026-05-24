@@ -4,10 +4,10 @@
 #
 # Shape mirrors the OVMS domain:
 #   - `repository` : identities (HF reference + revision), declared once
-#   - `served`     : HTTP endpoints, each backed by a model and a bag of LLMCalculator
-#                    fields. References into `repository` are by name.
+#   - `models`     : HTTP endpoints, each backed by a source model and a bag of LLMCalculator
+#                    fields. Keys are endpoint names; values reference into `repository` via .source.
 # Speculative decoding is not a special pipeline mode here -- it emerges when a
-# served entry's `graph` contains `draft_model`. Drop that field and the same
+# model entry's `graph` contains `draft_model`. Drop that field and the same
 # tool produces a plain single-model setup, no special-casing.
 
 runtime:
@@ -22,9 +22,9 @@ repository:
     hf: OpenVINO/Qwen3-0.6B-int8-ov
     task: text_generation
 
-served:
-  - name: qwen3-spec
-    model: qwen3-14b
+models:
+  qwen3-spec:
+    source: qwen3-14b
     graph:
       # Fields written into LLMCalculatorOptions in graph.pbtxt.
       # The loader treats this section as a typed pass-through bag; it does not
