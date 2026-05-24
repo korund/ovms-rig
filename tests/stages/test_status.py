@@ -31,6 +31,11 @@ models:
       device: GPU
       draft_model: draft
       draft_device: CPU
+
+profiles:
+  default:
+    models: [ep]
+    active: true
 """
 
 LOCAL_YAML = """
@@ -79,6 +84,8 @@ def test_status_succeeds_on_fresh_rig(rig: dict) -> None:
     assert "ovms binary" in result.output
     assert "model store destination" in result.output
     assert "declared models on disk" in result.output
+    assert "models (endpoints)" in result.output
+    assert "profiles" in result.output
     assert "rest port" in result.output
     assert "live ovms config" in result.output
 

@@ -1,49 +1,91 @@
-"""Check presence of live OVMS config files for declared model entries.
+"""Check live OVMS config (mediapipe_config_list in config.json) vs active profile.
 
-Content comparison vs the declaration is apply's job. Here we only report
-which files exist on disk.
+Compares mediapipe_config_list in live config.json with the set of models
+that should be active based on the active profile.
 """
 
 from __future__ import annotations
+
+import json
 
 from ovms_rig.config import LocalConfig, OvmsConfig
 from ovms_rig.report import CheckResult
 
 NAME = "live ovms config"
 
-CONFIG_JSON = "config.json"
-GRAPH_PBTXT = "graph.pbtxt"
-
 
 def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
     store = local.models.repository_path
-    if not store.exists():
+    config_json_path = store / "config.json"
+
+    # Determine which models should be active.
+    active_models: set[str] = set()
+    active_profile_name: str | None = None
+    for profile_name, profile in ovms.profiles.items():
+        if profile.active:
+            active_profile_name = profile_name
+            active_models = set(profile.models)
+            break
+
+    # If config.json doesn't exist and no profile is active, that's OK.
+    if not config_json_path.exists():
+        if active_profile_name is None:
+            return CheckResult(
+                name=NAME,
+                status="ok",
+                summary="config.json not present (no active profile, as expected)",
+            )
+        else:
+            return CheckResult(
+                name=NAME,
+                status="warn",
+                summary=f"config.json missing (profile '{active_profile_name}' is active)",
+                hint="run `ovms-rig activate {profile_name}` to rebuild live config",
+            )
+
+    # Read config.json and extract mediapipe_config_list.
+    try:
+        data = json.loads(config_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return CheckResult(
+            name=NAME,
+            status="error",
+            summary=f"failed to read config.json: {e}",
+        )
+
+    live_models: set[str] = set()
+    if "mediapipe_config_list" in data:
+        live_models = {entry["name"] for entry in data["mediapipe_config_list"]}
+
+    # Compare expected vs actual.
+    if active_models == live_models:
+        if active_models:
+            summary = f"OK: {len(active_models)} model(s) from profile '{active_profile_name}'"
+        else:
+            summary = "OK: empty config (no active profile)"
         return CheckResult(
             name=NAME,
             status="ok",
-            summary="store not materialized; no live config to inspect",
+            summary=summary,
+            details={"active_profile": active_profile_name, "live_models": sorted(live_models)},
         )
 
-    present: dict[str, list[str]] = {}
-    for model_name, entry in ovms.models.items():
-        source_identity = ovms.repository[entry.source]
-        model_dir = store / source_identity.hf
-        files = [
-            f for f in (CONFIG_JSON, GRAPH_PBTXT) if (model_dir / f).is_file()
-        ]
-        present[model_name] = files
-
-    total_files = sum(len(v) for v in present.values())
-    expected = 2 * len(ovms.models)
-    hint = (
-        "run `ovms-rig apply` to materialize live config"
-        if total_files < expected
-        else None
-    )
+    # Mismatch.
+    extra = live_models - active_models
+    missing = active_models - live_models
+    summary = f"mismatch vs profile '{active_profile_name}' (expected {len(active_models)}, got {len(live_models)})"
     return CheckResult(
         name=NAME,
-        status="ok",
-        summary=f"{total_files}/{expected} files present",
-        details={"per_model": present},
-        hint=hint,
+        status="warn",
+        summary=summary,
+        details={
+            "active_profile": active_profile_name,
+            "expected_models": sorted(active_models),
+            "live_models": sorted(live_models),
+            "extra_in_live": sorted(extra),
+            "missing_from_live": sorted(missing),
+        },
+        hint="run `ovms-rig activate {profile_name}` to rebuild live config".format(
+            profile_name=active_profile_name or "(none)"
+        ),
     )
