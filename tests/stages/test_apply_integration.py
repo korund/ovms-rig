@@ -696,3 +696,225 @@ def test_deactivate_produces_empty_config(tmp_path: Path, monkeypatch: pytest.Mo
     assert config_path.exists()
     cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
     assert cfg_data.get("mediapipe_config_list") == []
+
+
+def test_deactivate_restores_generation_config_from_orig(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch):
+    """Deactivate restores generation_config.json from .orig for models with overrides."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+    # Create pristine and live generation_config.json files.
+    (model_dir / "generation_config.json.orig").write_text(GENERATION_CONFIG, encoding="utf-8")
+    # Live file is modified (simulating activate having applied overrides).
+    modified_genconfig = """\
+{
+  "architectures": ["QwenForCausalLM"],
+  "temperature": 0.5,
+  "top_p": 0.95,
+  "max_length": 4096
+}
+"""
+    (model_dir / "generation_config.json").write_text(modified_genconfig, encoding="utf-8")
+
+    # Config with generation overrides on the model.
+    ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.5
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
+
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "deactivate",
+            ],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+
+    # After deactivate, live generation_config.json should be restored to pristine.
+    live_genconfig = model_dir / "generation_config.json"
+    restored_content = json.loads(live_genconfig.read_text(encoding="utf-8"))
+    # Should match .orig (pristine), not the modified version.
+    assert restored_content["temperature"] == 1.0, "Should be restored to .orig pristine value"
+    assert restored_content["top_p"] == 0.999, "Should be restored to .orig pristine value"
+
+
+def test_deactivate_missing_orig_warns_no_fail(tmp_path: Path,
+                                               monkeypatch: pytest.MonkeyPatch):
+    """Deactivate warns if .orig is missing (old model, pre-C1), but doesn't fail."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+    # NO .orig file (simulating old fetch before C1).
+    (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+
+    ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+    generation:
+      temperature: 0.5
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
+
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "deactivate",
+            ],
+            catch_exceptions=False,
+        )
+
+    # Should succeed (exit code 0), not fail.
+    assert result.exit_code == 0
+    # Live generation_config.json should not be modified (no .orig to restore from).
+    live_genconfig = model_dir / "generation_config.json"
+    content = live_genconfig.read_text(encoding="utf-8")
+    assert content == GENERATION_CONFIG
+
+
+def test_deactivate_no_overrides_does_not_touch_genconfig(tmp_path: Path,
+                                                         monkeypatch: pytest.MonkeyPatch):
+    """Deactivate does not touch generation_config.json if model has no overrides."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    model_dir = store / "OpenVINO" / "main-int8-ov"
+    model_dir.mkdir(parents=True)
+    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
+    (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+    (model_dir / "generation_config.json.orig").write_text(GENERATION_CONFIG, encoding="utf-8")
+
+    # Config WITHOUT generation overrides on the model.
+    ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  main:
+    hf: OpenVINO/main-int8-ov
+    task: text_generation
+
+models:
+  ep:
+    source: main
+    graph:
+      device: GPU
+
+profiles:
+  default:
+    models: [ep]
+    active: true
+"""
+    cfg.write_text(ovms_yaml, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
+
+    original_content = GENERATION_CONFIG
+
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "deactivate",
+            ],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    # Live generation_config.json should be unchanged (no overrides, so not restored).
+    live_genconfig = model_dir / "generation_config.json"
+    assert live_genconfig.read_text(encoding="utf-8") == original_content

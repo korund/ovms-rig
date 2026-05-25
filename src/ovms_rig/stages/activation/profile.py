@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from ovms_rig import log as logging_setup
-from ovms_rig.config import ConfigError, load_declaration
+from ovms_rig.config import ConfigError, OvmsConfig, load_declaration
 from ovms_rig.stages.activation import apply
 from ovms_rig.probes import smoke_load
 
@@ -75,6 +76,14 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
     # Ensure profiles section exists for rewriting (in case it was missing).
     if "profiles" not in data:
         data["profiles"] = {}
+
+    # Determine which profile is currently active (before mutation).
+    # This is needed for deactivate to restore generation_config.json from .orig.
+    previously_active_profile: str | None = None
+    for profile_name, profile_data in data.get("profiles", {}).items():
+        if profile_data.get("active"):
+            previously_active_profile = profile_name
+            break
 
     # Set active status for each profile.
     for profile_name in data.get("profiles", {}):
@@ -137,6 +146,12 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
             logger.error("[activation] failed to rollback ovms.yaml: %s", e)
         return rc
 
+    # On deactivate, restore generation_config.json from .orig for models with overrides.
+    if target is None and previously_active_profile is not None:
+        store = decl.local.models.repository_path
+        profile = ovms.profiles[previously_active_profile]
+        _restore_generation_configs(ovms, store, profile.models)
+
     rc = _smoke_check(ctx)
     if rc != 0:
         return rc
@@ -148,6 +163,60 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
         logger.info("[activation] no profile is active")
 
     return 0
+
+
+def _restore_generation_configs(ovms: OvmsConfig, store: Path, profile_models: list[str]) -> None:
+    """Restore generation_config.json from .orig for models with overrides.
+
+    Called during deactivate to restore pristine generation configs for models
+    that had generation overrides applied. Models without overrides are skipped.
+    If .orig is missing for a model with overrides, warn but don't fail
+    (old model fetched before C1, no .orig backup).
+
+    Args:
+        ovms: OvmsConfig object with models and repository sections.
+        store: Path to the store directory.
+        profile_models: List of model names from the deactivated profile.
+    """
+    for model_name in profile_models:
+        model_entry = ovms.models.get(model_name)
+        if model_entry is None:
+            logger.warning("[deactivate] model '%s' not found in config", model_name)
+            continue
+
+        # Only restore if model had generation overrides.
+        if not model_entry.generation:
+            continue
+
+        # Resolve model directory.
+        model_identity = ovms.repository.get(model_entry.source)
+        if model_identity is None:
+            logger.warning(
+                "[deactivate] model '%s' source '%s' not found in repository",
+                model_name, model_entry.source,
+            )
+            continue
+
+        model_dir = store / model_identity.hf
+        orig_path = model_dir / "generation_config.json.orig"
+        live_path = model_dir / "generation_config.json"
+
+        if not orig_path.exists():
+            logger.warning(
+                "[deactivate] %s: generation_config.json.orig not found at %s; "
+                "model was likely fetched before .orig snapshots were available",
+                model_name, orig_path,
+            )
+            continue
+
+        try:
+            shutil.copy2(orig_path, live_path)
+            logger.info("[deactivate] restored generation_config.json from .orig for %s", model_name)
+        except OSError as e:
+            logger.error(
+                "[deactivate] %s: failed to restore generation_config.json: %s",
+                model_name, e,
+            )
 
 
 def reapply(ctx: dict) -> int:
