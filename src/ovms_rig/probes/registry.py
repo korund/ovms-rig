@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ovms_rig.config import ConfigError, Declaration, load_declaration
-from ovms_rig.probes import live_config, models, ovms_binary, port, profiles, repository, smoke_load
+from ovms_rig.probes import live_config, model_files, models, ovms_binary, port, profiles, repository, smoke_load
 from ovms_rig.report import CheckResult
 
 if TYPE_CHECKING:
@@ -42,6 +42,7 @@ PROBES: dict[str, Probe] = {
     "repository.destination": Probe("repository destination", repository.check_destination),
     "repository.inventory": Probe("repository inventory", repository.check_inventory),
     "models": Probe("models", models.check),
+    "model_files": Probe("model files", model_files.check),
     "profiles": Probe("profiles", profiles.check),
     "port": Probe("rest port", port.check),
     "live_config": Probe("live config", live_config.check),
@@ -56,7 +57,7 @@ class Preset(str, Enum):
 
 PRESETS: dict[Preset, tuple[str, ...]] = {
     Preset.DIAGNOSTIC: tuple(PROBES.keys()),
-    Preset.BLOCKING: ("declaration", "ovms_binary", "models", "port"),
+    Preset.BLOCKING: ("declaration", "ovms_binary", "models", "port"),  # model_files NOT included
 }
 
 
