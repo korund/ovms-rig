@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -123,3 +124,67 @@ def test_fetch_passes_through_extras(rig: dict, recorder: Recorder) -> None:
     assert "--foo" in call
     assert "bar" in call
     assert "--baz" in call
+
+
+def test_fetch_creates_orig_snapshot(rig: dict, recorder: Recorder,
+                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fetch creates generation_config.json.orig after successful pull."""
+    # Mock _pull_one to create generation_config.json in dest.
+    def mock_pull_one(binary, env, store, name, model, extras):
+        dest = store / model.hf
+        dest.mkdir(parents=True, exist_ok=True)
+        gen_config = dest / "generation_config.json"
+        gen_config.write_text('{"max_tokens": 2048}', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr("ovms_rig.stages.fetch._pull_one", mock_pull_one)
+
+    result = _invoke(rig, "qwen-14b")
+    assert result.exit_code == 0
+
+    # Check that both generation_config.json and .orig exist.
+    dest = rig["store"] / "org" / "qwen-14b-int8-ov"
+    gen_config = dest / "generation_config.json"
+    gen_config_orig = dest / "generation_config.json.orig"
+
+    assert gen_config.is_file(), "generation_config.json should exist"
+    assert gen_config_orig.is_file(), "generation_config.json.orig should be created"
+
+    # Content should be identical.
+    assert gen_config.read_text(encoding="utf-8") == \
+           gen_config_orig.read_text(encoding="utf-8")
+
+
+def test_fetch_does_not_overwrite_existing_orig(rig: dict,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fetch does not overwrite existing generation_config.json.orig."""
+    def mock_pull_one(binary, env, store, name, model, extras):
+        dest = store / model.hf
+        dest.mkdir(parents=True, exist_ok=True)
+        gen_config = dest / "generation_config.json"
+        gen_config.write_text('{"max_tokens": 2048}', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr("ovms_rig.stages.fetch._pull_one", mock_pull_one)
+
+    # First fetch: create .orig.
+    result = _invoke(rig, "qwen-14b")
+    assert result.exit_code == 0
+
+    dest = rig["store"] / "org" / "qwen-14b-int8-ov"
+    gen_config_orig = dest / "generation_config.json.orig"
+
+    # Record mtime of .orig.
+    mtime_1 = gen_config_orig.stat().st_mtime
+
+    # Wait a tiny bit to ensure mtime would change if file is written.
+    time.sleep(0.05)
+
+    # Test idempotency by directly calling _create_orig_snapshot twice.
+    from ovms_rig.stages.fetch import _create_orig_snapshot
+
+    _create_orig_snapshot(dest)
+    mtime_2 = gen_config_orig.stat().st_mtime
+
+    # mtime should not have changed (file was not written).
+    assert mtime_2 == mtime_1, "existing .orig should not be overwritten"

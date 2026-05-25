@@ -8,6 +8,7 @@ already exists, the pull is skipped.
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -68,6 +69,8 @@ def run(ctx: dict) -> int:
 
     env = build_env(binary.parent)
     rc = _pull_one(binary, env, store, repository_name, model_identity, extras)
+    if rc == 0:
+        _create_orig_snapshot(dest)
     return rc
 
 
@@ -102,3 +105,27 @@ def _pull_one(
     if proc.returncode != 0:
         logger.error("[pull] '%s' failed with exit code %d", name, proc.returncode)
     return proc.returncode
+
+
+def _create_orig_snapshot(dest: Path) -> bool:
+    """Create generation_config.json.orig snapshot if not already present.
+
+    After successful pull, creates an immutable pristine snapshot of
+    generation_config.json as .orig (if both conditions hold):
+    1. generation_config.json exists in the pulled model directory.
+    2. generation_config.json.orig does not yet exist (idempotent).
+
+    Returns True if .orig was created, False if skipped.
+    """
+    gen_config = dest / "generation_config.json"
+    gen_config_orig = dest / "generation_config.json.orig"
+
+    if not gen_config.is_file():
+        return False
+
+    if gen_config_orig.is_file():
+        return False
+
+    shutil.copy2(gen_config, gen_config_orig)
+    logger.info("[fetch] created generation_config.json.orig snapshot at %s", gen_config_orig)
+    return True
