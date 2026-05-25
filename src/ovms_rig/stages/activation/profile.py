@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,15 +20,18 @@ from ovms_rig.stages.activation import apply
 logger = logging.getLogger(__name__)
 
 
-def set_active_profile(ctx: dict, target: str | None) -> int:
+def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -> int:
     """Sets active profile to target (or none if target is None).
 
-    Updates ovms.yaml (active fields), backs it up, then rebuilds
-    config.json and sibling graphs via apply stage.
+    Updates ovms.yaml (active fields), then rebuilds config.json and
+    sibling graphs via apply stage. Rollback on apply failure uses an
+    in-memory snapshot; the on-disk ovms.yaml.bak is opt-in via `backup`
+    (overwrites any previous .bak; no timestamps, no accumulation).
 
     Args:
         ctx: CLI context dict with config_path, local_path, log_level, ovms_path.
         target: Profile name to activate, or None to deactivate all.
+        backup: If True, write ovms.yaml.bak next to ovms.yaml before overwrite.
 
     Returns:
         Exit code (0 on success, 1 on error).
@@ -56,10 +58,11 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
         )
         return 1
 
-    # Read ovms.yaml as raw data so we can preserve structure and rewrite.
+    # Read ovms.yaml as raw text + parsed data. The text snapshot lets us
+    # roll back in-memory if apply fails; the parsed data is what we mutate.
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        original_text = config_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(original_text)
     except (OSError, yaml.YAMLError) as e:
         logger.error("failed to read ovms.yaml: %s", e)
         return 1
@@ -76,16 +79,17 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
             # Deactivate (set to false or delete the key; we choose false for consistency).
             data["profiles"][profile_name]["active"] = False
 
-    # Backup ovms.yaml before write.
+    # Opt-in disk backup. Fixed name, overwrites any previous .bak.
+    if backup:
+        backup_path = config_path.parent / f"{config_path.name}.bak"
+        try:
+            backup_path.write_text(original_text, encoding="utf-8")
+            logger.info("[activation] backed up ovms.yaml to %s", backup_path)
+        except OSError as e:
+            logger.error("failed to backup ovms.yaml: %s", e)
+            return 1
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_path = config_path.parent / f"{config_path.name}.bak.{timestamp}"
-    try:
-        with open(config_path, "r", encoding="utf-8") as src:
-            backup_path.write_text(src.read(), encoding="utf-8")
-        logger.info("[activation] backed up ovms.yaml to %s", backup_path)
-    except OSError as e:
-        logger.error("failed to backup ovms.yaml: %s", e)
-        return 1
 
     # Serialize new YAML to string.
     try:
@@ -120,10 +124,10 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
     rc = apply.run(apply_ctx)
     if rc != 0:
         logger.error("[activation] apply failed while rebuilding config (rc=%d)", rc)
-        # Rollback: restore ovms.yaml from backup.
+        # Rollback ovms.yaml from in-memory snapshot.
         try:
-            shutil.copy(backup_path, config_path)
-            logger.info("[activation] apply failed (rc=%d), rolled back ovms.yaml from %s", rc, backup_path)
+            config_path.write_text(original_text, encoding="utf-8")
+            logger.info("[activation] rolled back ovms.yaml from snapshot")
         except OSError as e:
             logger.error("[activation] failed to rollback ovms.yaml: %s", e)
         return rc

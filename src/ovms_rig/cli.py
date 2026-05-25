@@ -80,17 +80,27 @@ def cmd_fetch(ctx: click.Context, repository_name: str) -> None:
 
 @main.command("activate")
 @click.argument("profile_name")
+@click.option(
+    "--backup",
+    is_flag=True,
+    help="Write ovms.yaml.bak alongside ovms.yaml before overwriting it.",
+)
 @click.pass_context
-def cmd_activate(ctx: click.Context, profile_name: str) -> None:
+def cmd_activate(ctx: click.Context, profile_name: str, backup: bool) -> None:
     """Activate a profile: update ovms.yaml and rebuild live config."""
-    sys.exit(activation.set_active_profile(ctx.obj, profile_name))
+    sys.exit(activation.set_active_profile(ctx.obj, profile_name, backup=backup))
 
 
 @main.command("deactivate")
+@click.option(
+    "--backup",
+    is_flag=True,
+    help="Write ovms.yaml.bak alongside ovms.yaml before overwriting it.",
+)
 @click.pass_context
-def cmd_deactivate(ctx: click.Context) -> None:
+def cmd_deactivate(ctx: click.Context, backup: bool) -> None:
     """Deactivate all profiles: live config becomes empty."""
-    sys.exit(activation.set_active_profile(ctx.obj, None))
+    sys.exit(activation.set_active_profile(ctx.obj, None, backup=backup))
 
 
 @main.command("remove")

@@ -6,7 +6,7 @@ Tests verify:
 - activate <other> when <first> active switches active status
 - deactivate when active sets no active profile
 - deactivate when none active is no-op
-- backup created as .bak.<timestamp> after activate
+- --backup writes ovms.yaml.bak (fixed name, overwrites existing); no backup by default
 """
 
 from __future__ import annotations
@@ -213,22 +213,49 @@ def test_deactivate_when_none_active_is_noop(rig: dict, monkeypatch: pytest.Monk
     assert config_data.get("mediapipe_config_list") == []
 
 
-def test_backup_created_on_activate(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Backup ovms.yaml created as .bak.<timestamp> after activate."""
+def test_no_backup_by_default(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without --backup, activate must not create any ovms.yaml.bak* files."""
     monkeypatch.chdir(rig["tmp"])
 
     result = _invoke(rig, "activate", "default")
     assert result.exit_code == 0
 
-    # Look for backup files.
-    backups = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
-    assert len(backups) >= 1, f"Expected at least 1 backup, found: {backups}"
+    leftovers = list(rig["config"].parent.glob("ovms.yaml.bak*"))
+    assert leftovers == [], f"Expected no backups, found: {leftovers}"
 
-    # Backup should contain original content (both profiles exist).
-    backup_path = backups[0]
+
+def test_backup_flag_writes_fixed_name(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With --backup, write ovms.yaml.bak (no timestamp) with original content."""
+    monkeypatch.chdir(rig["tmp"])
+
+    result = _invoke(rig, "activate", "default", "--backup")
+    assert result.exit_code == 0
+
+    backup_path = rig["config"].parent / "ovms.yaml.bak"
+    assert backup_path.exists()
+    # No timestamped variants alongside it.
+    timestamped = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
+    assert timestamped == [], f"Expected no timestamped backups, found: {timestamped}"
+
     backup_data = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
     assert "default" in backup_data.get("profiles", {})
     assert "bench" in backup_data.get("profiles", {})
+
+
+def test_backup_flag_overwrites_existing_backup(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated --backup runs overwrite ovms.yaml.bak; no accumulation."""
+    monkeypatch.chdir(rig["tmp"])
+
+    backup_path = rig["config"].parent / "ovms.yaml.bak"
+    backup_path.write_text("stale-backup-content\n", encoding="utf-8")
+
+    result = _invoke(rig, "activate", "default", "--backup")
+    assert result.exit_code == 0
+
+    assert backup_path.exists()
+    assert backup_path.read_text(encoding="utf-8") != "stale-backup-content\n"
+    # Still only one .bak file.
+    assert list(rig["config"].parent.glob("ovms.yaml.bak*")) == [backup_path]
 
 
 def test_activate_atomic_write_preserves_original_on_write_failure(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,10 +287,6 @@ def test_activate_atomic_write_preserves_original_on_write_failure(rig: dict, mo
     current_content = rig["config"].read_text(encoding="utf-8")
     assert current_content == original_content, "Original ovms.yaml should be unchanged after write failure"
 
-    # Backup should exist (created before write attempt).
-    backups = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
-    assert len(backups) >= 1, "Backup should be created before write"
-
 
 def test_activate_rolls_back_yaml_when_apply_fails(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     """When apply.run fails, ovms.yaml is rolled back to original state."""
@@ -287,9 +310,8 @@ def test_activate_rolls_back_yaml_when_apply_fails(rig: dict, monkeypatch: pytes
     assert rolled_back_data["profiles"]["default"]["active"] is True, "Should rollback to original state"
     assert rolled_back_data["profiles"]["bench"]["active"] is False, "Should rollback to original state"
 
-    # Backup should exist.
-    backups = list(rig["config"].parent.glob("ovms.yaml.bak.*"))
-    assert len(backups) >= 1, "Backup should be created"
+    # No disk backup expected (rollback uses in-memory snapshot).
+    assert list(rig["config"].parent.glob("ovms.yaml.bak*")) == []
 
     # Log should mention rollback.
     assert "rolled back" in result.output.lower() or "apply failed" in result.output.lower()
