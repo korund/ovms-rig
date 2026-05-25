@@ -206,6 +206,19 @@ def collect_pbtxt_fields(
         fields["draft_device"] = entry_graph.draft_device
     if draft_models_path is not None:
         fields["draft_models_path"] = draft_models_path
+    # Declared LLMCalculatorOptions fields. `ovms --pull` produces a template
+    # pbtxt with its own defaults; activation overrides any field the user
+    # declared in `graph:`. Unset (None) means "leave ovms default in place".
+    for name in (
+        "max_num_seqs",
+        "enable_prefix_caching",
+        "cache_size",
+        "dynamic_split_fuse",
+        "kv_cache_precision",
+    ):
+        value = getattr(entry_graph, name)
+        if value is not None:
+            fields[name] = value
 
     plugin_config: dict[str, object] = dict(entry_graph.plugin_config or {})
     if cache_dir is not None and "CACHE_DIR" not in plugin_config:

@@ -182,10 +182,48 @@ class _StubGraph:
         device="GPU",
         draft_device=None,
         plugin_config=None,
+        max_num_seqs=None,
+        enable_prefix_caching=None,
+        cache_size=None,
+        dynamic_split_fuse=None,
+        kv_cache_precision=None,
     ):
         self.device = device
         self.draft_device = draft_device
         self.plugin_config = plugin_config
+        self.max_num_seqs = max_num_seqs
+        self.enable_prefix_caching = enable_prefix_caching
+        self.cache_size = cache_size
+        self.dynamic_split_fuse = dynamic_split_fuse
+        self.kv_cache_precision = kv_cache_precision
+
+
+class TestLLMCalculatorOptionsFields:
+    """All declared LLMCalculatorOptions fields reach the patch dict."""
+
+    def test_all_declared_fields_collected(self):
+        graph = _StubGraph(
+            max_num_seqs=128,
+            enable_prefix_caching=True,
+            cache_size=0,
+            dynamic_split_fuse=True,
+            kv_cache_precision="u8",
+        )
+        fields = collect_pbtxt_fields(graph, draft_models_path=None, cache_dir=None)
+        assert fields["max_num_seqs"] == 128
+        assert fields["enable_prefix_caching"] is True
+        assert fields["cache_size"] == 0
+        assert fields["dynamic_split_fuse"] is True
+        assert fields["kv_cache_precision"] == "u8"
+
+    def test_unset_fields_skipped(self):
+        graph = _StubGraph(max_num_seqs=64)
+        fields = collect_pbtxt_fields(graph, draft_models_path=None, cache_dir=None)
+        assert fields["max_num_seqs"] == 64
+        assert "enable_prefix_caching" not in fields
+        assert "cache_size" not in fields
+        assert "dynamic_split_fuse" not in fields
+        assert "kv_cache_precision" not in fields
 
 
 class TestCacheDirBridge:

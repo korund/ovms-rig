@@ -44,27 +44,11 @@ class ModelIdentity(_Strict):
     revision: str | None = None
 
 
-# Fields of `graph:` split by which stage consumes them.
-# Pull-bucket: passed as `--<name> <value>` to `ovms --pull` at fetch time.
-# Pbtxt-bucket: not pull flags; patched into graph.pbtxt at apply time.
-# Field names mirror ovms flag names verbatim (snake_case).
-GRAPH_PULL_FIELDS = frozenset({
-    "max_num_seqs",
-    "enable_prefix_caching",
-    "cache_size",
-    "dynamic_split_fuse",
-    "kv_cache_precision",
-})
-GRAPH_PBTXT_FIELDS = frozenset({
-    "device",
-    "draft_device",
-    "draft_model",
-    "plugin_config",
-})
-
-
 class Graph(_Strict):
-    # Pull-bucket: forwarded to `ovms --pull` as CLI flags.
+    # All graph fields are patched into graph.pbtxt during apply. `ovms --pull`
+    # at fetch time stays "dumb" -- it just downloads the model and generates a
+    # template pbtxt with ovms defaults; the activation stage overrides values
+    # in the sibling copy. Field names mirror LLMCalculatorOptions keys.
     max_num_seqs: int | None = Field(default=None, ge=1)
     enable_prefix_caching: bool | None = None
     # cache_size in GB; 0 means dynamic per OVMS convention.
@@ -72,7 +56,6 @@ class Graph(_Strict):
     dynamic_split_fuse: bool | None = None
     kv_cache_precision: KvCachePrecision | None = None
 
-    # Pbtxt-only: patched into graph.pbtxt during apply.
     device: Device  # required; ovms cannot start without a target device
     draft_device: Device | None = None
     # Reference into ovms.yaml `repository:` keys. Resolved to a filesystem path
@@ -100,11 +83,6 @@ class Graph(_Strict):
                 f"draft_device={self.draft_device!r}"
             )
         return self
-
-    def pull_flags(self) -> dict[str, object]:
-        return {name: getattr(self, name)
-                for name in GRAPH_PULL_FIELDS
-                if getattr(self, name) is not None}
 
 
 class ModelEntry(_Strict):
