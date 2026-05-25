@@ -1,7 +1,8 @@
 """Profile activation/deactivation stage.
 
 Updates ovms.yaml active fields and rebuilds config.json + sibling graphs
-via apply submodule.
+via apply submodule. Also exposes `reapply` for re-rendering derived files
+without touching active flags.
 """
 
 from __future__ import annotations
@@ -136,9 +137,79 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
             logger.error("[activation] failed to rollback ovms.yaml: %s", e)
         return rc
 
-    # Smoke-load validation: probe OVMS with generated config.
+    rc = _smoke_check(ctx)
+    if rc != 0:
+        return rc
+
+    # Log final state.
+    if target is not None:
+        logger.info("[activation] '%s' is now active", target)
+    else:
+        logger.info("[activation] no profile is active")
+
+    return 0
+
+
+def reapply(ctx: dict) -> int:
+    """Re-render derived files from ovms.yaml as-is, without touching active flags.
+
+    Shortcut for `activate <currently-active>` that does not require knowing
+    the name. Useful after hand-editing model/graph fields in ovms.yaml. If no
+    profile is currently active, the rendered config is empty (equivalent to
+    deactivate). Does not write ovms.yaml; --backup has no effect here.
+
+    Args:
+        ctx: CLI context dict with config_path, local_path, log_level, ovms_path.
+
+    Returns:
+        Exit code (0 on success, non-zero on apply or smoke-load failure).
+    """
+    config_path = Path(ctx["config_path"])
+    local_path = Path(ctx["local_path"])
+    cli_level: str | None = ctx.get("log_level")
+
+    logging_setup.configure((cli_level or "INFO").upper())
+
     try:
-        decl = load_declaration(config_path, local_path, cli_override=Path(ctx["ovms_path"]) if ctx.get("ovms_path") else None)
+        decl = load_declaration(config_path, local_path)
+    except ConfigError as e:
+        logger.error("config load failed: %s", e)
+        return 1
+
+    apply_ctx = dict(ctx)
+    apply_ctx["dry_run"] = False
+    apply_ctx["extras"] = []
+
+    rc = apply.run(apply_ctx)
+    if rc != 0:
+        logger.error("[activation] apply failed while rebuilding config (rc=%d)", rc)
+        return rc
+
+    rc = _smoke_check(ctx)
+    if rc != 0:
+        return rc
+
+    active = next((name for name, p in decl.ovms.profiles.items() if p.active), None)
+    if active is not None:
+        logger.info("[activation] reapplied (active: '%s')", active)
+    else:
+        logger.info("[activation] reapplied (no active profile)")
+
+    return 0
+
+
+def _smoke_check(ctx: dict) -> int:
+    """Reload declaration and probe OVMS with the rendered config.
+
+    Returns 0 on ok/warn, 1 on error or reload failure.
+    """
+    config_path = Path(ctx["config_path"])
+    local_path = Path(ctx["local_path"])
+    try:
+        decl = load_declaration(
+            config_path, local_path,
+            cli_override=Path(ctx["ovms_path"]) if ctx.get("ovms_path") else None,
+        )
     except ConfigError as e:
         logger.error("[activation] config reload for smoke-load failed: %s", e)
         return 1
@@ -160,11 +231,5 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
         logger.warning("[activation] smoke-load warning: %s", result.summary)
         if result.hint:
             logger.info("  hint: %s", result.hint)
-
-    # Log final state.
-    if target is not None:
-        logger.info("[activation] '%s' is now active", target)
-    else:
-        logger.info("[activation] no profile is active")
 
     return 0

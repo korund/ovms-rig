@@ -376,3 +376,55 @@ def test_activate_leaves_files_on_smoke_load_failure(rig: dict, monkeypatch: pyt
     assert config_json.exists()
     config_data = json.loads(config_json.read_text(encoding="utf-8"))
     assert len(config_data.get("mediapipe_config_list", [])) == 1
+
+
+def test_bare_activate_reapplies_without_touching_yaml(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`activate` without a profile name re-renders derived files but leaves yaml unchanged."""
+    monkeypatch.chdir(rig["tmp"])
+
+    # default is active in fixture. Capture yaml verbatim.
+    yaml_before = rig["config"].read_text(encoding="utf-8")
+
+    # Render config.json once via normal activate, then delete it to prove reapply re-creates it.
+    result = _invoke(rig, "activate", "default")
+    assert result.exit_code == 0
+    config_json = rig["store"] / "config.json"
+    assert config_json.exists()
+    config_json.unlink()
+
+    # Yaml may have been re-serialized by activate; refresh baseline.
+    yaml_before = rig["config"].read_text(encoding="utf-8")
+
+    # Bare activate: no profile name.
+    result = _invoke(rig, "activate")
+    assert result.exit_code == 0
+
+    # Yaml byte-identical -- bare activate must not touch it.
+    yaml_after = rig["config"].read_text(encoding="utf-8")
+    assert yaml_after == yaml_before, "bare activate must not modify ovms.yaml"
+
+    # Derived files were re-rendered.
+    assert config_json.exists()
+    config_data = json.loads(config_json.read_text(encoding="utf-8"))
+    assert len(config_data.get("mediapipe_config_list", [])) == 1
+
+
+def test_bare_activate_with_no_active_profile_renders_empty(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bare `activate` when no profile is active renders an empty config (== deactivate)."""
+    monkeypatch.chdir(rig["tmp"])
+
+    # Flip all profiles inactive by hand.
+    data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
+    for p in data["profiles"].values():
+        p["active"] = False
+    rig["config"].write_text(yaml.dump(data), encoding="utf-8")
+    yaml_before = rig["config"].read_text(encoding="utf-8")
+
+    result = _invoke(rig, "activate")
+    assert result.exit_code == 0
+
+    assert rig["config"].read_text(encoding="utf-8") == yaml_before
+    config_json = rig["store"] / "config.json"
+    assert config_json.exists()
+    config_data = json.loads(config_json.read_text(encoding="utf-8"))
+    assert config_data.get("mediapipe_config_list") == []

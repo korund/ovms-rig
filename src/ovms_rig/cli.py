@@ -79,15 +79,17 @@ def cmd_fetch(ctx: click.Context, repository_name: str) -> None:
 
 
 @main.command("activate")
-@click.argument("profile_name")
+@click.argument("profile_name", required=False)
 @click.option(
     "--backup",
     is_flag=True,
-    help="Write ovms.yaml.bak alongside ovms.yaml before overwriting it.",
+    help="Write ovms.yaml.bak alongside ovms.yaml before overwriting it (ignored without profile_name).",
 )
 @click.pass_context
-def cmd_activate(ctx: click.Context, profile_name: str, backup: bool) -> None:
-    """Activate a profile: update ovms.yaml and rebuild live config."""
+def cmd_activate(ctx: click.Context, profile_name: str | None, backup: bool) -> None:
+    """Activate a profile, or re-apply current state if no profile is given."""
+    if profile_name is None:
+        sys.exit(activation.reapply(ctx.obj))
     sys.exit(activation.set_active_profile(ctx.obj, profile_name, backup=backup))
 
 
