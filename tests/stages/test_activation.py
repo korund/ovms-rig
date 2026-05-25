@@ -329,16 +329,17 @@ def test_activate_rolls_back_yaml_when_apply_fails(rig: dict, monkeypatch: pytes
     assert "rolled back" in result.output.lower() or "apply failed" in result.output.lower()
 
 
-def test_activate_rolls_back_yaml_when_smoke_load_fails(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When smoke-load fails, ovms.yaml is rolled back and config.json reapplied."""
+def test_activate_leaves_files_on_smoke_load_failure(rig: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Smoke-load failure exits non-zero but leaves rendered files in place.
+
+    Rationale: rolling ovms.yaml back to its pre-activate snapshot and reapplying
+    derived files does not restore a known-good state -- the snapshot captures
+    whatever the user hand-edited, which is typically what caused the failure.
+    Honest behavior: report the failure, leave the rejected config on disk for
+    the user to inspect and fix.
+    """
     monkeypatch.chdir(rig["tmp"])
 
-    # Record initial state: default active, bench inactive.
-    original_data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
-    assert original_data["profiles"]["default"]["active"] is True
-    assert original_data["profiles"]["bench"]["active"] is False
-
-    # Mock smoke-load probe to return error.
     from ovms_rig.report import CheckResult
 
     def fail_smoke_check(decl):
@@ -365,117 +366,13 @@ def test_activate_rolls_back_yaml_when_smoke_load_fails(rig: dict, monkeypatch: 
 
     assert result.exit_code == 1
 
-    # ovms.yaml should be rolled back to original state.
-    rolled_back_data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
-    assert rolled_back_data["profiles"]["default"]["active"] is True
-    assert rolled_back_data["profiles"]["bench"]["active"] is False
+    # ovms.yaml reflects the requested flip -- not rolled back.
+    data = yaml.safe_load(rig["config"].read_text(encoding="utf-8"))
+    assert data["profiles"]["default"]["active"] is False
+    assert data["profiles"]["bench"]["active"] is True
 
-    # config.json should be reapplied for default profile.
+    # config.json was rendered (and left as-is) for the requested profile.
     config_json = rig["store"] / "config.json"
     assert config_json.exists()
     config_data = json.loads(config_json.read_text(encoding="utf-8"))
-    # Should have only one model (ep from default profile).
     assert len(config_data.get("mediapipe_config_list", [])) == 1
-
-
-def test_activate_redoes_apply_on_smoke_load_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When switching profiles and smoke-load fails, apply is redone for original profile."""
-    cfg = tmp_path / "ovms.yaml"
-    loc = tmp_path / "local.yaml"
-    store = tmp_path / "store"
-    store.mkdir()
-
-    model_dir = store / "OpenVINO" / "main-int8-ov"
-    model_dir.mkdir(parents=True)
-    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
-
-    # Two profiles: A and B with same model.
-    ovms_yaml = """\
-runtime:
-  rest_port: 8000
-  log_level: DEBUG
-
-repository:
-  main:
-    hf: OpenVINO/main-int8-ov
-    task: text_generation
-
-models:
-  ep:
-    source: main
-    graph:
-      device: GPU
-
-profiles:
-  A:
-    models: [ep]
-    active: true
-  B:
-    models: [ep]
-    active: false
-"""
-    cfg.write_text(ovms_yaml, encoding="utf-8")
-    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    runner = CliRunner()
-
-    # First activate A (baseline).
-    from ovms_rig.report import CheckResult
-
-    def ok_smoke_check(decl):
-        return CheckResult(
-            name="smoke-load",
-            status="ok",
-            summary="OVMS accepted config: 1 graph(s) validated",
-        )
-
-    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "A",
-            ],
-            catch_exceptions=False,
-        )
-    assert result.exit_code == 0
-    graph_a = model_dir / "graph.ep.pbtxt"
-    assert graph_a.exists()
-    config_a = json.loads((store / "config.json").read_text(encoding="utf-8"))
-
-    # Now activate B, but smoke-load will fail.
-    def fail_smoke_check(decl):
-        return CheckResult(
-            name="smoke-load",
-            status="error",
-            summary="config rejected by OVMS",
-            details={"fail_markers": ["test marker"]},
-        )
-
-    with patch("ovms_rig.probes.smoke_load.check", side_effect=fail_smoke_check):
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "B",
-            ],
-            catch_exceptions=False,
-        )
-
-    assert result.exit_code == 1
-
-    # ovms.yaml should be back to A active.
-    restored_data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-    assert restored_data["profiles"]["A"]["active"] is True
-    assert restored_data["profiles"]["B"]["active"] is False
-
-    # config.json should contain A's config (reapplied).
-    config_restored = json.loads((store / "config.json").read_text(encoding="utf-8"))
-    assert config_restored == config_a, "config.json should be reapplied for profile A"

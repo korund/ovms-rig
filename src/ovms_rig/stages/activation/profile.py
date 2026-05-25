@@ -25,9 +25,12 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
     """Sets active profile to target (or none if target is None).
 
     Updates ovms.yaml (active fields), then rebuilds config.json and
-    sibling graphs via apply stage. Rollback on apply failure uses an
-    in-memory snapshot; the on-disk ovms.yaml.bak is opt-in via `backup`
-    (overwrites any previous .bak; no timestamps, no accumulation).
+    sibling graphs via apply stage. On apply failure (mid-write crash),
+    ovms.yaml is rolled back from an in-memory snapshot and apply restores
+    derived files from its own snapshot. On smoke-load failure, files are
+    left as written: the rendered config is what OVMS rejected, fixing it
+    requires editing ovms.yaml and re-running activate. The on-disk
+    ovms.yaml.bak is opt-in via `backup` (overwrites any previous .bak).
 
     Args:
         ctx: CLI context dict with config_path, local_path, log_level, ovms_path.
@@ -138,12 +141,6 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
         decl = load_declaration(config_path, local_path, cli_override=Path(ctx["ovms_path"]) if ctx.get("ovms_path") else None)
     except ConfigError as e:
         logger.error("[activation] config reload for smoke-load failed: %s", e)
-        # Rollback ovms.yaml.
-        try:
-            config_path.write_text(original_text, encoding="utf-8")
-            logger.info("[activation] rolled back ovms.yaml from snapshot")
-        except OSError as e_rb:
-            logger.error("[activation] failed to rollback ovms.yaml: %s", e_rb)
         return 1
 
     result = smoke_load.check(decl)
@@ -157,26 +154,6 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
             logger.error("[activation] last log lines:")
             for line in result.details["log_tail"]:
                 logger.error("  %s", line)
-
-        # Rollback ovms.yaml from in-memory snapshot.
-        try:
-            config_path.write_text(original_text, encoding="utf-8")
-            logger.info("[activation] rolled back ovms.yaml from snapshot")
-        except OSError as e_rb:
-            logger.error("[activation] failed to rollback ovms.yaml: %s", e_rb)
-            return 1
-
-        # Re-run apply to rebuild config.json and graphs under reverted profile.
-        try:
-            rc_reapply = apply.run(apply_ctx)
-            if rc_reapply != 0:
-                logger.error("[activation] reapply after rollback failed (rc=%d)", rc_reapply)
-                return 1
-            logger.info("[activation] reapplied config.json and graphs after rollback")
-        except Exception as e_reapply:
-            logger.error("[activation] reapply raised exception: %s", e_reapply)
-            return 1
-
         return 1
 
     if result.status == "warn":
