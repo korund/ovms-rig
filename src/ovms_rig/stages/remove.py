@@ -41,7 +41,9 @@ def run(ctx: dict) -> int:
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms, local = load_declaration(config_path, local_path)
+        decl = load_declaration(config_path, local_path, cli_override=ovms_override)
+        ovms = decl.ovms
+        local = decl.local
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1
@@ -197,6 +199,7 @@ def _remove_from_config(config_json_path: Path, repository_name: str) -> None:
         return
 
     entries = data["mediapipe_config_list"]
+
     # Keep entries that don't match repository_name.
     reconciled = [
         e for e in entries

@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import json
 
-from ovms_rig.config import LocalConfig, OvmsConfig
+from ovms_rig.config import Declaration
 from ovms_rig.report import CheckResult
 
 NAME = "live ovms config"
 
 
-def check(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
+def check(decl: Declaration) -> CheckResult:
+    ovms = decl.ovms
+    local = decl.local
     store = local.models.repository_path
     config_json_path = store / "config.json"
 

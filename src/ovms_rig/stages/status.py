@@ -20,8 +20,8 @@ def run(ctx: dict) -> int:
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms, _ = load_declaration(config_path, local_path)
-        level = (cli_level or ovms.runtime.log_level).upper()
+        decl = load_declaration(config_path, local_path)
+        level = (cli_level or decl.ovms.runtime.log_level).upper()
         logging_setup.configure(level)
         logger.debug("log level: %s (source: %s)",
                      level, "cli" if cli_level else "ovms.yaml")

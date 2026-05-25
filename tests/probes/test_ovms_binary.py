@@ -6,19 +6,26 @@ import sys
 from pathlib import Path
 
 from ovms_rig.probes.ovms_binary import check
-from ovms_rig.config import LocalConfig, LocalModels, LocalRuntime
+from ovms_rig.config import Declaration, LocalConfig, LocalModels, LocalRuntime, OvmsConfig, Runtime
 
 
-def _local(ovms_path: Path | None = None) -> LocalConfig:
-    return LocalConfig(
+def _decl(ovms_path: Path | None = None, cli_override: Path | None = None) -> Declaration:
+    local = LocalConfig(
         runtime=LocalRuntime(ovms_path=ovms_path),
         models=LocalModels(repository_path=Path("C:/unused-by-binary-probe")),
     )
+    ovms = OvmsConfig(
+        runtime=Runtime(rest_port=8000),
+        repository={},
+        models={},
+        profiles={},
+    )
+    return Declaration(ovms=ovms, local=local, cli_override=cli_override)
 
 
 def test_cli_override_wins(tmp_path: Path) -> None:
     exe = Path(sys.executable)
-    result = check(cli_override=exe, local=_local(ovms_path=tmp_path / "ignored"))
+    result = check(_decl(ovms_path=tmp_path / "ignored", cli_override=exe))
     assert result.status == "ok"
     assert result.details["source"] == "cli"
     assert result.summary == str(exe)
@@ -26,20 +33,20 @@ def test_cli_override_wins(tmp_path: Path) -> None:
 
 def test_local_yaml_used_when_no_cli(tmp_path: Path) -> None:
     exe = Path(sys.executable)
-    result = check(cli_override=None, local=_local(ovms_path=exe))
+    result = check(_decl(ovms_path=exe, cli_override=None))
     assert result.status == "ok"
     assert result.details["source"] == "local.yaml"
 
 
 def test_error_when_path_missing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", lambda _: None)
-    result = check(cli_override=None, local=_local())
+    result = check(_decl(cli_override=None))
     assert result.status == "error"
     assert "not found" in result.summary
 
 
 def test_error_when_resolved_path_is_directory(tmp_path: Path) -> None:
-    result = check(cli_override=tmp_path, local=_local())
+    result = check(_decl(cli_override=tmp_path))
     assert result.status == "error"
     assert "not a file" in result.summary
 
@@ -51,7 +58,7 @@ def test_path_lookup_via_which(tmp_path: Path, monkeypatch) -> None:
     binary.chmod(0o755)  # make executable; may be no-op on Windows but harmless
 
     monkeypatch.setattr("shutil.which", lambda _: str(binary))
-    result = check(cli_override=None, local=_local())
+    result = check(_decl(cli_override=None))
     assert result.status == "ok"
     assert result.details["source"] == "PATH"
     assert result.summary == str(binary)
@@ -72,6 +79,6 @@ def test_error_when_binary_not_executable(tmp_path: Path, monkeypatch) -> None:
         return os.access(path, mode)
 
     monkeypatch.setattr("os.access", mock_access)
-    result = check(cli_override=binary_file, local=_local())
+    result = check(_decl(cli_override=binary_file))
     assert result.status == "error"
     assert "executable" in result.summary.lower() or "executable" in (result.hint or "").lower()

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import socket
 
-from ovms_rig.config import OvmsConfig
+from ovms_rig.config import Declaration
 from ovms_rig.report import CheckResult
 
 NAME = "rest port"
 
 
-def check(ovms: OvmsConfig) -> CheckResult:
-    port = ovms.runtime.rest_port
+def check(decl: Declaration) -> CheckResult:
+    port = decl.ovms.runtime.rest_port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
         try:

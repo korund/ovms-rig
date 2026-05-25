@@ -51,7 +51,9 @@ def run(ctx: dict) -> int:
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms, local = load_declaration(config_path, local_path)
+        decl = load_declaration(config_path, local_path, cli_override=ovms_override)
+        ovms = decl.ovms
+        local = decl.local
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1

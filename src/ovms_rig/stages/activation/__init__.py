@@ -41,7 +41,8 @@ def set_active_profile(ctx: dict, target: str | None) -> int:
     logging_setup.configure((cli_level or "INFO").upper())
 
     try:
-        ovms, _ = load_declaration(config_path, local_path)
+        decl = load_declaration(config_path, local_path)
+        ovms = decl.ovms
     except ConfigError as e:
         logger.error("config load failed: %s", e)
         return 1

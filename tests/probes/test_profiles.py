@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from ovms_rig.config import load_ovms
+from pathlib import Path
+
+from ovms_rig.config import Declaration, load_ovms
+from ovms_rig.config.schema import LocalConfig, LocalModels, LocalRuntime
 from ovms_rig.probes import profiles
 
 OVMS_YAML_NO_PROFILES = """
@@ -58,8 +61,13 @@ def test_profiles_none_declared(tmp_path):
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(OVMS_YAML_NO_PROFILES, encoding="utf-8")
     ovms = load_ovms(cfg)
+    local = LocalConfig(
+        runtime=LocalRuntime(),
+        models=LocalModels(repository_path=Path("/tmp/store")),
+    )
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = profiles.check(ovms)
+    result = profiles.check(decl)
     assert result.status == "ok"
     assert "no profiles" in result.summary
 
@@ -69,8 +77,13 @@ def test_profiles_with_active(tmp_path):
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(OVMS_YAML_WITH_PROFILES, encoding="utf-8")
     ovms = load_ovms(cfg)
+    local = LocalConfig(
+        runtime=LocalRuntime(),
+        models=LocalModels(repository_path=Path("/tmp/store")),
+    )
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = profiles.check(ovms)
+    result = profiles.check(decl)
     assert result.status == "ok"
     assert "default" in result.summary
     assert "active profile" in result.summary
@@ -86,8 +99,13 @@ def test_profiles_model_membership(tmp_path):
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(OVMS_YAML_WITH_PROFILES, encoding="utf-8")
     ovms = load_ovms(cfg)
+    local = LocalConfig(
+        runtime=LocalRuntime(),
+        models=LocalModels(repository_path=Path("/tmp/store")),
+    )
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = profiles.check(ovms)
+    result = profiles.check(decl)
     # ep is in both default and bench
     assert result.details["model_membership"]["ep"] == ["default", "bench"]
     # other is only in bench

@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
-from ovms_rig.config.schema import LocalConfig, OvmsConfig
+from ovms_rig.config.schema import LocalConfig, LocalModels, LocalRuntime, OvmsConfig
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """Unified value object for all loaded configuration.
+
+    Contains:
+    - ovms: the primary declaration from ovms.yaml
+    - local: per-host overrides from local.yaml
+    - cli_override: optional CLI override for the ovms binary path
+    """
+    ovms: OvmsConfig
+    local: LocalConfig
+    cli_override: Path | None = None
 
 
 class ConfigError(Exception):
@@ -26,7 +41,7 @@ def load_ovms(path: Path) -> OvmsConfig:
 
 
 def load_local(path: Path) -> LocalConfig:
-    raw = _read_yaml(path) or {}
+    raw = _read_yaml(path)
     try:
         return LocalConfig.model_validate(raw)
     except ValidationError as e:
@@ -91,7 +106,35 @@ def _check_profiles(cfg: OvmsConfig, source: Path) -> None:
         )
 
 
-def load_declaration(config_path: Path, local_path: Path) -> tuple[OvmsConfig, LocalConfig]:
+def load_declaration(
+    config_path: Path,
+    local_path: Path,
+    cli_override: Path | None = None,
+) -> Declaration:
+    """Load and parse both declaration files, returning unified Declaration.
+
+    Args:
+        config_path: path to ovms.yaml
+        local_path: path to local.yaml (missing file is OK, defaults are used)
+        cli_override: optional CLI override for ovms binary path
+
+    Returns:
+        Declaration value object with ovms, local, and cli_override
+
+    Raises:
+        ConfigError: if either file is invalid or references cannot be resolved
+    """
     ovms = load_ovms(config_path)
-    local = load_local(local_path)
-    return ovms, local
+    # load_local requires file to exist; handle missing file gracefully here
+    if local_path.exists():
+        local = load_local(local_path)
+    else:
+        # File missing: use defaults (require repository_path with sensible default)
+        try:
+            local = LocalConfig(
+                runtime=LocalRuntime(),
+                models=LocalModels(repository_path=Path("models")),
+            )
+        except ValidationError as e:
+            raise ConfigError(f"{local_path}: schema validation failed\n{e}") from e
+    return Declaration(ovms=ovms, local=local, cli_override=cli_override)

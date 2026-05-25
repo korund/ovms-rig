@@ -6,7 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
-from ovms_rig.config import LocalConfig
+from ovms_rig.config import Declaration, LocalConfig
 from ovms_rig.report import CheckResult
 
 NAME = "ovms binary"
@@ -30,8 +30,8 @@ def resolve_validated(cli_override: Path | None, local: LocalConfig) -> tuple[Pa
     return resolved, source, None
 
 
-def check(cli_override: Path | None, local: LocalConfig) -> CheckResult:
-    path, source, error = resolve_validated(cli_override, local)
+def check(decl: Declaration) -> CheckResult:
+    path, source, error = resolve_validated(decl.cli_override, decl.local)
 
     if error == "no path resolved":
         return CheckResult(

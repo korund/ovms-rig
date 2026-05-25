@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ovms_rig.config import load_local, load_ovms
+from ovms_rig.config import Declaration, load_local, load_ovms
 from ovms_rig.probes import live_config
 
 OVMS_YAML = """
@@ -70,8 +70,9 @@ def test_live_config_no_file_no_active_profile(tmp_path):
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "ok"
     assert "no active profile" in result.summary
 
@@ -88,8 +89,9 @@ def test_live_config_no_file_active_profile(tmp_path):
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "warn"
     assert "config.json missing" in result.summary
     assert "default" in result.summary
@@ -107,6 +109,7 @@ def test_live_config_matches_active_profile(tmp_path):
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
     # Create config.json with matching entry.
     config_json = store / "config.json"
@@ -120,7 +123,7 @@ def test_live_config_matches_active_profile(tmp_path):
     }
     config_json.write_text(json.dumps(config_data), encoding="utf-8")
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "ok"
     assert "OK: 1 model(s)" in result.summary
     assert result.details["active_profile"] == "default"
@@ -141,6 +144,7 @@ def test_live_config_extra_model_in_live(tmp_path):
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
     # Create config.json with extra entry.
     config_json = store / "config.json"
@@ -158,7 +162,7 @@ def test_live_config_extra_model_in_live(tmp_path):
     }
     config_json.write_text(json.dumps(config_data), encoding="utf-8")
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "warn"
     assert "mismatch" in result.summary
     assert "extra" in result.details["extra_in_live"]
@@ -176,13 +180,14 @@ def test_live_config_missing_model_in_live(tmp_path):
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
     # Create empty config.json.
     config_json = store / "config.json"
     config_data = {"mediapipe_config_list": []}
     config_json.write_text(json.dumps(config_data), encoding="utf-8")
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "warn"
     assert "mismatch" in result.summary
     assert "ep" in result.details["missing_from_live"]
@@ -221,13 +226,14 @@ profiles:
 
     ovms = load_ovms(cfg)
     local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
 
     # Create config.json with empty list (matches empty active profile).
     config_json = store / "config.json"
     config_data = {"mediapipe_config_list": []}
     config_json.write_text(json.dumps(config_data), encoding="utf-8")
 
-    result = live_config.check(ovms, local)
+    result = live_config.check(decl)
     assert result.status == "ok"
     assert "empty config" in result.summary or "OK" in result.summary
     assert result.details["active_profile"] == "empty_profile"

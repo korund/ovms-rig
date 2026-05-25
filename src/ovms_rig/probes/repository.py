@@ -15,14 +15,15 @@ import os
 import tempfile
 from pathlib import Path
 
-from ovms_rig.config import LocalConfig, OvmsConfig
+from ovms_rig.config import Declaration, OvmsConfig
 from ovms_rig.report import CheckResult
 
 DESTINATION = "model store destination"
 INVENTORY = "declared models on disk"
 
 
-def check_destination(local: LocalConfig) -> CheckResult:
+def check_destination(decl: Declaration) -> CheckResult:
+    local = decl.local
     # repository_path is required by schema; no None-branch needed here.
     path = local.models.repository_path
     anchor = _nearest_existing_ancestor(path)
@@ -48,7 +49,9 @@ def check_destination(local: LocalConfig) -> CheckResult:
     )
 
 
-def check_inventory(ovms: OvmsConfig, local: LocalConfig) -> CheckResult:
+def check_inventory(decl: Declaration) -> CheckResult:
+    ovms = decl.ovms
+    local = decl.local
     store = local.models.repository_path
     declared = sorted(ovms.repository)
     if not store.exists():

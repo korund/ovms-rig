@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from ovms_rig.config import load_ovms
+from ovms_rig.config import Declaration, load_ovms
+from ovms_rig.config.schema import LocalConfig, LocalModels, LocalRuntime
 from ovms_rig.probes import models
+from pathlib import Path
 
 OVMS_YAML_VALID = """
 runtime:
@@ -58,8 +60,13 @@ def test_models_valid_source(tmp_path):
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(OVMS_YAML_VALID, encoding="utf-8")
     ovms = load_ovms(cfg)
+    local = LocalConfig(
+        runtime=LocalRuntime(),
+        models=LocalModels(repository_path=Path("/tmp/store")),
+    )
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = models.check(ovms)
+    result = models.check(decl)
     assert result.status == "ok"
     assert "1 model(s)" in result.summary
     assert result.details["models"]["ep"]["source"] == "main"
@@ -98,8 +105,13 @@ profiles:
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(ovms_yaml, encoding="utf-8")
     ovms = load_ovms(cfg)
+    local = LocalConfig(
+        runtime=LocalRuntime(),
+        models=LocalModels(repository_path=Path("/tmp/store")),
+    )
+    decl = Declaration(ovms=ovms, local=local)
 
-    result = models.check(ovms)
+    result = models.check(decl)
     assert result.status == "ok"
     # ep is in default profile
     assert result.details["models"]["ep"]["profiles"] == ["default"]

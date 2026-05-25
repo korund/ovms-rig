@@ -8,13 +8,14 @@ Reports:
 
 from __future__ import annotations
 
-from ovms_rig.config import OvmsConfig
+from ovms_rig.config import Declaration
 from ovms_rig.report import CheckResult
 
 NAME = "profiles"
 
 
-def check(ovms: OvmsConfig) -> CheckResult:
+def check(decl: Declaration) -> CheckResult:
+    ovms = decl.ovms
     if not ovms.profiles:
         return CheckResult(
             name=NAME,
