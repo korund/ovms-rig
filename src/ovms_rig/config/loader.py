@@ -67,14 +67,16 @@ def _check_references(cfg: OvmsConfig, source: Path) -> None:
                 f"{source}: model '{name}' references unknown source "
                 f"'{entry.source}' (declared models: {sorted(known)})"
             )
-        # One model -> one target. The pull-bucket fields under model.graph
-        # bake into the model's pbtxt; multiple model entries targeting the
-        # same source would race over a single file.
+        # One model -> one target. OVMS reads generation_config.json by fixed name
+        # and does not support override via config.json. Multiple model entries
+        # targeting the same source would conflict over a single shared config file.
+        # This limitation may be lifted once OVMS adds generation_config override support.
         if entry.source in targets:
             raise ConfigError(
                 f"{source}: source '{entry.source}' is target of both "
                 f"'{targets[entry.source]}' and '{name}'; "
-                "one source can be target of at most one model entry"
+                "one source can be target of at most one model entry "
+                "(OVMS limitation: generation_config.json is not overridable per entry)"
             )
         targets[entry.source] = name
         draft = entry.graph.draft_model

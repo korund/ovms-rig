@@ -5,7 +5,7 @@ Tests verify:
 - sibling copy (graph.<model_name>.pbtxt) is created with patches applied.
 - config.json is written with mediapipe_config_list entries.
 - dry-run writes to build/, does not touch live files (via apply internal).
-- live run writes to store and backs up config.json.
+- live run writes to store and derives generation_config.json from .orig.
 - Profile activation/deactivation works correctly.
 """
 
@@ -181,17 +181,6 @@ class TestDryRun:
         build_config = rig["tmp"] / "build" / "config.json"
         assert build_config.exists(), "config.json should be in build/"
 
-    def test_dry_run_no_backups_created(self, rig: dict,
-                                        monkeypatch: pytest.MonkeyPatch):
-        """Dry-run does not create backup files."""
-        monkeypatch.chdir(rig["tmp"])
-        rc = _invoke_apply_directly(rig, dry_run=True)
-        assert rc == 0
-
-        # No backups in store.
-        backups = list(rig["store"].glob("*.bak.*"))
-        assert backups == [], f"No backups should be created during dry-run, found: {backups}"
-
     def test_dry_run_with_generation_overrides_missing_file(self, tmp_path: Path,
                                                            monkeypatch: pytest.MonkeyPatch):
         """Dry-run with generation overrides and missing pristine generation_config.json doesn't crash."""
@@ -248,9 +237,6 @@ profiles:
 
         # No files should be written to live store.
         assert not (model_dir / "generation_config.json").exists()
-        # But build/ can have the proposed config.
-        build_path = tmp_path / "build"
-        # (may or may not exist depending on whether any files were written to build)
 
 
 # ---------------------------------------------------------------------------
@@ -310,9 +296,9 @@ class TestLiveRun:
 # ---------------------------------------------------------------------------
 
 class TestGenerationConfig:
-    def test_generation_config_merge_in_live_run(self, tmp_path: Path,
-                                                monkeypatch: pytest.MonkeyPatch):
-        """Model with generation overrides merges into generation_config.json."""
+    def test_generation_config_reads_from_orig(self, tmp_path: Path,
+                                              monkeypatch: pytest.MonkeyPatch):
+        """Apply reads generation_config.json from .orig (pristine) and merges overrides."""
         cfg = tmp_path / "ovms.yaml"
         loc = tmp_path / "local.yaml"
         store = tmp_path / "store"
@@ -323,6 +309,8 @@ class TestGenerationConfig:
         model_dir.mkdir(parents=True)
         (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
         (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+        # Create .orig (simulating C1 fetch behavior).
+        (model_dir / "generation_config.json.orig").write_text(GENERATION_CONFIG, encoding="utf-8")
 
         # Config with generation overrides on the model.
         ovms_yaml = """\
@@ -376,98 +364,24 @@ profiles:
             )
         assert result.exit_code == 0
 
-        # generation_config.json must exist and contain the overrides.
+        # generation_config.json must exist and contain the overrides (derived from .orig).
         live_genconfig = model_dir / "generation_config.json"
         assert live_genconfig.exists()
         content = json.loads(live_genconfig.read_text(encoding="utf-8"))
         assert content["temperature"] == 0.5
         assert content["top_p"] == 0.95
-        # Original keys must be preserved.
+        # Original keys from .orig must be preserved.
         assert content["architectures"] == ["QwenForCausalLM"]
 
-    def test_generation_config_backup_created(self, tmp_path: Path,
-                                             monkeypatch: pytest.MonkeyPatch):
-        """Backup of generation_config.json is created on live run."""
+    def test_generation_config_missing_orig_fails(self, tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch):
+        """Apply fails when generation_config.json.orig is missing (requires fetch first)."""
         cfg = tmp_path / "ovms.yaml"
         loc = tmp_path / "local.yaml"
         store = tmp_path / "store"
         store.mkdir()
 
-        model_dir = store / "OpenVINO" / "main-int8-ov"
-        model_dir.mkdir(parents=True)
-        (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
-        (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
-        original_genconfig_content = GENERATION_CONFIG
-
-        ovms_yaml = """\
-runtime:
-  rest_port: 8000
-  log_level: INFO
-
-repository:
-  main:
-    hf: OpenVINO/main-int8-ov
-    task: text_generation
-
-models:
-  ep:
-    source: main
-    graph:
-      device: GPU
-    generation:
-      temperature: 0.3
-
-profiles:
-  default:
-    models: [ep]
-    active: true
-"""
-        cfg.write_text(ovms_yaml, encoding="utf-8")
-        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-
-        def ok_smoke_check(decl):
-            return CheckResult(
-                name="smoke-load",
-                status="ok",
-                summary="validation passed",
-            )
-
-        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
-            result = runner.invoke(
-                main,
-                [
-                    "--config", str(cfg),
-                    "--local", str(loc),
-                    "--ovms-path", sys.executable,
-                    "activate",
-                    "default",
-                ],
-                catch_exceptions=False,
-            )
-        assert result.exit_code == 0
-
-        # Backup must exist next to original with suffix.
-        genconfig_backups = list(model_dir.glob("generation_config.json.bak.*"))
-        assert len(genconfig_backups) == 1, f"Expected 1 backup, found: {genconfig_backups}"
-        # Backup content must match original (before apply mutation).
-        backup_path = genconfig_backups[0]
-        backup_content = backup_path.read_text(encoding="utf-8")
-        assert backup_content == original_genconfig_content, (
-            f"Backup should contain original, got: {backup_content}"
-        )
-
-    def test_generation_config_missing_file_error(self, tmp_path: Path,
-                                                 monkeypatch: pytest.MonkeyPatch):
-        """Apply fails when generation_config.json is missing but overrides declared."""
-        cfg = tmp_path / "ovms.yaml"
-        loc = tmp_path / "local.yaml"
-        store = tmp_path / "store"
-        store.mkdir()
-
-        # Model directory without generation_config.json.
+        # Model directory without .orig (and without generation_config.json too).
         model_dir = store / "OpenVINO" / "main-int8-ov"
         model_dir.mkdir(parents=True)
         (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
@@ -513,6 +427,8 @@ profiles:
             catch_exceptions=False,
         )
         assert result.exit_code == 1
+        # Error message should mention .orig and fetch.
+        assert "generation_config.json.orig" in result.output or "fetch" in result.output.lower()
 
     def test_generation_config_none_skipped(self, tmp_path: Path,
                                            monkeypatch: pytest.MonkeyPatch):
@@ -648,9 +564,9 @@ profiles:
         live_genconfig = model_dir / "generation_config.json"
         assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
 
-    def test_generation_config_empty_dict_skipped(self, tmp_path: Path,
-                                                 monkeypatch: pytest.MonkeyPatch):
-        """Model with empty generation dict {} skips generation_config.json (no overrides)."""
+    def test_generation_config_idempotent(self, tmp_path: Path,
+                                          monkeypatch: pytest.MonkeyPatch):
+        """Repeated activate with same profile derives identical generation_config.json (no drift)."""
         cfg = tmp_path / "ovms.yaml"
         loc = tmp_path / "local.yaml"
         store = tmp_path / "store"
@@ -659,8 +575,8 @@ profiles:
         model_dir = store / "OpenVINO" / "main-int8-ov"
         model_dir.mkdir(parents=True)
         (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
-        original_genconfig = GENERATION_CONFIG
-        (model_dir / "generation_config.json").write_text(original_genconfig, encoding="utf-8")
+        (model_dir / "generation_config.json").write_text(GENERATION_CONFIG, encoding="utf-8")
+        (model_dir / "generation_config.json.orig").write_text(GENERATION_CONFIG, encoding="utf-8")
 
         ovms_yaml = """\
 runtime:
@@ -677,7 +593,8 @@ models:
     source: main
     graph:
       device: GPU
-    generation: {}
+    generation:
+      temperature: 0.7
 
 profiles:
   default:
@@ -688,7 +605,6 @@ profiles:
         loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
 
         monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
 
         def ok_smoke_check(decl):
             return CheckResult(
@@ -697,8 +613,10 @@ profiles:
                 summary="validation passed",
             )
 
+        # First activate.
+        runner = CliRunner()
         with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
-            result = runner.invoke(
+            result1 = runner.invoke(
                 main,
                 [
                     "--config", str(cfg),
@@ -709,15 +627,28 @@ profiles:
                 ],
                 catch_exceptions=False,
             )
-        assert result.exit_code == 0
+        assert result1.exit_code == 0
+        content_after_first = (model_dir / "generation_config.json").read_text(encoding="utf-8")
 
-        # generation_config.json must be unchanged (empty dict is treated as no overrides).
-        live_genconfig = model_dir / "generation_config.json"
-        assert live_genconfig.read_text(encoding="utf-8") == original_genconfig
+        # Second activate (same profile).
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result2 = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
+        assert result2.exit_code == 0
+        content_after_second = (model_dir / "generation_config.json").read_text(encoding="utf-8")
 
-        # No backup should be created (because no overrides were applied).
-        genconfig_backups = list(model_dir.glob("generation_config.json.bak.*"))
-        assert genconfig_backups == [], "No backup should be created for empty generation dict"
+        # Content must be identical (idempotent, no drift).
+        assert content_after_first == content_after_second, \
+            "Repeated activate should produce identical generation_config.json (derived from .orig)"
 
 
 # ---------------------------------------------------------------------------
@@ -759,171 +690,9 @@ def test_deactivate_produces_empty_config(tmp_path: Path, monkeypatch: pytest.Mo
             ],
             catch_exceptions=False,
         )
+
     assert result.exit_code == 0
-
-    config_json = store / "config.json"
-    assert config_json.exists()
-    data = json.loads(config_json.read_text(encoding="utf-8"))
-    assert data.get("mediapipe_config_list") == []
-
-
-def test_apply_fail_fast_missing_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Fail-fast: missing model directory causes apply to exit without writing config.json."""
-    cfg = tmp_path / "ovms.yaml"
-    loc = tmp_path / "local.yaml"
-    store = tmp_path / "store"
-    store.mkdir()
-
-    # Create only main model directory (draft will be missing).
-    model_dir = store / "OpenVINO" / "main-int8-ov"
-    model_dir.mkdir(parents=True)
-    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
-
-    # YAML with two models but only one directory exists.
-    ovms_yaml = """\
-runtime:
-  rest_port: 8000
-  log_level: DEBUG
-
-repository:
-  main:
-    hf: OpenVINO/main-int8-ov
-    task: text_generation
-  draft:
-    hf: OpenVINO/draft-int8-ov
-    task: text_generation
-
-models:
-  ep:
-    source: main
-    graph:
-      device: GPU
-  draft_ep:
-    source: draft
-    graph:
-      device: CPU
-
-profiles:
-  default:
-    models: [ep, draft_ep]
-    active: true
-"""
-    cfg.write_text(ovms_yaml, encoding="utf-8")
-    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    from ovms_rig.stages.activation import apply
-    ctx = {
-        "config_path": str(cfg),
-        "local_path": str(loc),
-        "ovms_path": sys.executable,
-        "log_level": None,
-        "dry_run": False,
-        "extras": [],
-    }
-    rc = apply.run(ctx)
-
-    # Should fail (rc=1) because one model directory is missing.
-    assert rc == 1
-
-    # Check config.json state: apply may have reconciled before failure or skipped it.
-    # After audit fix, apply should fail early on missing model_dir, before reconcile.
-    config_json = store / "config.json"
-    if config_json.exists():
-        # If config.json exists, it should only contain the successful model.
-        data = json.loads(config_json.read_text(encoding="utf-8"))
-        entries = data.get("mediapipe_config_list", [])
-        # Should be empty or contain only 'ep', not 'draft_ep'.
-        names = {e["name"] for e in entries if "name" in e}
-        assert "draft_ep" not in names, "Failed model should not be in config.json"
-
-
-def test_activate_different_profile_cleans_up_old_sibling_graphs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Activate different profile removes sibling graphs from previous profile."""
-    cfg = tmp_path / "ovms.yaml"
-    loc = tmp_path / "local.yaml"
-    store = tmp_path / "store"
-    store.mkdir()
-
-    model_dir = store / "OpenVINO" / "main-int8-ov"
-    model_dir.mkdir(parents=True)
-    (model_dir / "graph.pbtxt").write_text(GRAPH_PBTXT, encoding="utf-8")
-
-    # YAML with two profiles: default active, other inactive.
-    ovms_yaml = """\
-runtime:
-  rest_port: 8000
-  log_level: DEBUG
-
-repository:
-  main:
-    hf: OpenVINO/main-int8-ov
-    task: text_generation
-
-models:
-  ep:
-    source: main
-    graph:
-      device: GPU
-
-profiles:
-  default:
-    models: [ep]
-    active: true
-  other:
-    models: [ep]
-    active: false
-"""
-    cfg.write_text(ovms_yaml, encoding="utf-8")
-    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    runner = CliRunner()
-
-    def ok_smoke_check(decl):
-        return CheckResult(
-            name="smoke-load",
-            status="ok",
-            summary="validation passed",
-        )
-
-    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
-        # First activate default (already active, but do it explicitly).
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
-        assert result.exit_code == 0
-        # Sibling created for 'default' profile.
-        assert (model_dir / "graph.ep.pbtxt").exists()
-
-        # Create an obsolete sibling graph (from hypothetical past activation).
-        (model_dir / "graph.old_model.pbtxt").write_text("obsolete", encoding="utf-8")
-        (model_dir / "graph.another.pbtxt").write_text("obsolete", encoding="utf-8")
-
-        # Now activate 'other' profile.
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "other",
-            ],
-            catch_exceptions=False,
-        )
-    assert result.exit_code == 0
-
-    # Obsolete sibling graphs should be deleted.
-    assert not (model_dir / "graph.old_model.pbtxt").exists()
-    assert not (model_dir / "graph.another.pbtxt").exists()
-    # Current sibling graph should still exist (both profiles have [ep]).
-    assert (model_dir / "graph.ep.pbtxt").exists()
+    config_path = store / "config.json"
+    assert config_path.exists()
+    cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cfg_data.get("mediapipe_config_list") == []

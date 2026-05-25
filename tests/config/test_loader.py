@@ -189,7 +189,8 @@ models:
     graph:
       device: CPU
 """
-    with pytest.raises(ConfigError, match="one source per model|ep1|ep2|main"):
+    # Error message references OVMS limitation and the conflicting entries.
+    with pytest.raises(ConfigError, match="one source can be target|ep1|ep2|OVMS limitation"):
         load_ovms(_write(tmp_path / "ovms.yaml", bad))
 
 

@@ -5,7 +5,7 @@ Steps per model entry in active profile:
 2. Read pristine graph.pbtxt (never mutated).
 3. Create sibling copy graph.<model_name>.pbtxt.
 4. Patch sibling copy (device, draft_device, draft_models_path).
-5. Merge generation_config.json overrides if declared on model.
+5. Merge generation_config.json overrides (read from .orig pristine snapshot).
 6. Register endpoint via direct config.json JSON write (not ovms CLI).
 7. Cleanup obsolete sibling-graphs from previous activations.
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ovms_rig import log as logging_setup
@@ -107,7 +106,6 @@ def run(ctx: dict) -> int:
                 )
 
     env = build_env(binary.parent)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     processed_models: list[str] = []
 
     # Process only models in active profile.
@@ -183,21 +181,22 @@ def run(ctx: dict) -> int:
         # Handle generation_config.json if overrides are declared on the entry.
         overrides = entry.generation
         if overrides:
-            genconfig_path = target_dir / "generation_config.json"
+            genconfig_orig = target_dir / "generation_config.json.orig"
+            genconfig_live = target_dir / "generation_config.json"
 
             # For dry-run, log intention without requiring file to exist.
             if dry_run:
                 dest_genconfig = _BUILD_DIR / model_identity.hf / "generation_config.json"
                 logger.info(
                     "[apply] %s: would read generation overrides from %s",
-                    model_name, genconfig_path,
+                    model_name, genconfig_orig,
                 )
                 dest_genconfig.parent.mkdir(parents=True, exist_ok=True)
-                # Write proposed result to build/ (assumes pristine exists in dry-run context).
-                if genconfig_path.exists():
+                # Write proposed result to build/ (assumes pristine .orig exists in dry-run context).
+                if genconfig_orig.exists():
                     try:
-                        existing_text = genconfig_path.read_text(encoding="utf-8")
-                        new_genconfig = merge_generation(existing_text, overrides)
+                        pristine_text = genconfig_orig.read_text(encoding="utf-8")
+                        new_genconfig = merge_generation(pristine_text, overrides)
                         dest_genconfig.write_text(new_genconfig, encoding="utf-8")
                     except (ValueError, OSError) as exc:
                         logger.warning(
@@ -207,25 +206,21 @@ def run(ctx: dict) -> int:
                 processed_models.append(model_name)
                 continue
 
-            # Live run: file must exist.
-            if not genconfig_path.exists():
+            # Live run: pristine .orig must exist.
+            if not genconfig_orig.exists():
                 logger.error(
-                    "[apply] %s: generation_config.json not found at %s",
-                    model_name, genconfig_path,
+                    "[apply] %s: generation_config.json.orig not found at %s; "
+                    "run fetch or re-fetch the model first",
+                    model_name, genconfig_orig,
                 )
                 # Fail-fast: rollback and exit.
                 _rollback(config_json_path, config_json_snapshot, existing_graphs)
                 return 1
 
-            dest_genconfig = genconfig_path
-
-            # Backup before write (live run only).
-            _backup_file(genconfig_path, timestamp)
-
-            # Merge and write.
+            # Merge from pristine and write to live.
             try:
-                existing_text = genconfig_path.read_text(encoding="utf-8")
-                new_genconfig = merge_generation(existing_text, overrides)
+                pristine_text = genconfig_orig.read_text(encoding="utf-8")
+                new_genconfig = merge_generation(pristine_text, overrides)
             except (ValueError, OSError) as exc:
                 logger.error(
                     "[apply] %s: generation_config merge failed: %s",
@@ -235,10 +230,10 @@ def run(ctx: dict) -> int:
                 _rollback(config_json_path, config_json_snapshot, existing_graphs)
                 return 1
 
-            dest_genconfig.write_text(new_genconfig, encoding="utf-8")
+            genconfig_live.write_text(new_genconfig, encoding="utf-8")
             logger.info(
                 "[apply] %s: generation_config.json written to %s",
-                model_name, dest_genconfig,
+                model_name, genconfig_live,
             )
 
         processed_models.append(model_name)
@@ -323,16 +318,3 @@ def _rollback(config_json_path: Path, config_json_snapshot: str | None, existing
                     logger.error("[rollback] failed to delete graph file %s: %s", graph_file, e)
     except OSError as e:
         logger.error("[rollback] error walking store directory: %s", e)
-
-
-def _backup_file(src: Path, timestamp: str) -> None:
-    """Create a backup of src file with suffix: src.bak.<timestamp>.
-
-    Backup stored next to original (same directory).
-    timestamp format: YYYYMMDDTHHMMSS (UTC, no colons).
-    """
-    if not src.exists():
-        return
-    dest = src.parent / f"{src.name}.bak.{timestamp}"
-    shutil.copy2(src, dest)
-    logger.debug("[backup] %s -> %s", src, dest)
