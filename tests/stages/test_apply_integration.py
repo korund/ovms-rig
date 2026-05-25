@@ -14,11 +14,13 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from ovms_rig.cli import main
+from ovms_rig.report import CheckResult
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -102,16 +104,27 @@ def rig(tmp_path: Path) -> dict:
 
 def _invoke(rig: dict, *extra_args: str) -> object:
     runner = CliRunner()
-    return runner.invoke(
-        main,
-        [
-            "--config", str(rig["config"]),
-            "--local", str(rig["local"]),
-            "--ovms-path", sys.executable,
-            *extra_args,
-        ],
-        catch_exceptions=False,
-    )
+    # Mock smoke_load.check so it always succeeds without actually running OVMS.
+    from ovms_rig.report import CheckResult
+
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
+
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        return runner.invoke(
+            main,
+            [
+                "--config", str(rig["config"]),
+                "--local", str(rig["local"]),
+                "--ovms-path", sys.executable,
+                *extra_args,
+            ],
+            catch_exceptions=False,
+        )
 
 
 def _invoke_apply_directly(rig: dict, dry_run: bool = False) -> int:
@@ -341,17 +354,26 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
+
+        def ok_smoke_check(decl):
+            return CheckResult(
+                name="smoke-load",
+                status="ok",
+                summary="validation passed",
+            )
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
         assert result.exit_code == 0
 
         # generation_config.json must exist and contain the overrides.
@@ -405,17 +427,26 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
+
+        def ok_smoke_check(decl):
+            return CheckResult(
+                name="smoke-load",
+                status="ok",
+                summary="validation passed",
+            )
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
         assert result.exit_code == 0
 
         # Backup must exist next to original with suffix.
@@ -469,6 +500,7 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
+        # Don't patch smoke_load here, we expect this to fail during apply.
         result = runner.invoke(
             main,
             [
@@ -523,17 +555,26 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
+
+        def ok_smoke_check(decl):
+            return CheckResult(
+                name="smoke-load",
+                status="ok",
+                summary="validation passed",
+            )
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
         assert result.exit_code == 0
 
         # generation_config.json must be unchanged.
@@ -581,17 +622,26 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
+
+        def ok_smoke_check(decl):
+            return CheckResult(
+                name="smoke-load",
+                status="ok",
+                summary="validation passed",
+            )
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
         assert result.exit_code == 0
 
         # generation_config.json must be unchanged.
@@ -639,17 +689,26 @@ profiles:
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(
-            main,
-            [
-                "--config", str(cfg),
-                "--local", str(loc),
-                "--ovms-path", sys.executable,
-                "activate",
-                "default",
-            ],
-            catch_exceptions=False,
-        )
+
+        def ok_smoke_check(decl):
+            return CheckResult(
+                name="smoke-load",
+                status="ok",
+                summary="validation passed",
+            )
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                [
+                    "--config", str(cfg),
+                    "--local", str(loc),
+                    "--ovms-path", sys.executable,
+                    "activate",
+                    "default",
+                ],
+                catch_exceptions=False,
+            )
         assert result.exit_code == 0
 
         # generation_config.json must be unchanged (empty dict is treated as no overrides).
@@ -681,16 +740,25 @@ def test_deactivate_produces_empty_config(tmp_path: Path, monkeypatch: pytest.Mo
 
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    result = runner.invoke(
-        main,
-        [
-            "--config", str(cfg),
-            "--local", str(loc),
-            "--ovms-path", sys.executable,
-            "deactivate",
-        ],
-        catch_exceptions=False,
-    )
+
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
+
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "deactivate",
+            ],
+            catch_exceptions=False,
+        )
     assert result.exit_code == 0
 
     config_json = store / "config.json"
@@ -812,38 +880,46 @@ profiles:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
-    # First activate default (already active, but do it explicitly).
-    result = runner.invoke(
-        main,
-        [
-            "--config", str(cfg),
-            "--local", str(loc),
-            "--ovms-path", sys.executable,
-            "activate",
-            "default",
-        ],
-        catch_exceptions=False,
-    )
-    assert result.exit_code == 0
-    # Sibling created for 'default' profile.
-    assert (model_dir / "graph.ep.pbtxt").exists()
+    def ok_smoke_check(decl):
+        return CheckResult(
+            name="smoke-load",
+            status="ok",
+            summary="validation passed",
+        )
 
-    # Create an obsolete sibling graph (from hypothetical past activation).
-    (model_dir / "graph.old_model.pbtxt").write_text("obsolete", encoding="utf-8")
-    (model_dir / "graph.another.pbtxt").write_text("obsolete", encoding="utf-8")
+    with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+        # First activate default (already active, but do it explicitly).
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "activate",
+                "default",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        # Sibling created for 'default' profile.
+        assert (model_dir / "graph.ep.pbtxt").exists()
 
-    # Now activate 'other' profile.
-    result = runner.invoke(
-        main,
-        [
-            "--config", str(cfg),
-            "--local", str(loc),
-            "--ovms-path", sys.executable,
-            "activate",
-            "other",
-        ],
-        catch_exceptions=False,
-    )
+        # Create an obsolete sibling graph (from hypothetical past activation).
+        (model_dir / "graph.old_model.pbtxt").write_text("obsolete", encoding="utf-8")
+        (model_dir / "graph.another.pbtxt").write_text("obsolete", encoding="utf-8")
+
+        # Now activate 'other' profile.
+        result = runner.invoke(
+            main,
+            [
+                "--config", str(cfg),
+                "--local", str(loc),
+                "--ovms-path", sys.executable,
+                "activate",
+                "other",
+            ],
+            catch_exceptions=False,
+        )
     assert result.exit_code == 0
 
     # Obsolete sibling graphs should be deleted.

@@ -16,6 +16,7 @@ import yaml
 from ovms_rig import log as logging_setup
 from ovms_rig.config import ConfigError, load_declaration
 from ovms_rig.stages.activation import apply
+from ovms_rig.probes import smoke_load
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,57 @@ def set_active_profile(ctx: dict, target: str | None, *, backup: bool = False) -
         except OSError as e:
             logger.error("[activation] failed to rollback ovms.yaml: %s", e)
         return rc
+
+    # Smoke-load validation: probe OVMS with generated config.
+    try:
+        decl = load_declaration(config_path, local_path, cli_override=Path(ctx["ovms_path"]) if ctx.get("ovms_path") else None)
+    except ConfigError as e:
+        logger.error("[activation] config reload for smoke-load failed: %s", e)
+        # Rollback ovms.yaml.
+        try:
+            config_path.write_text(original_text, encoding="utf-8")
+            logger.info("[activation] rolled back ovms.yaml from snapshot")
+        except OSError as e_rb:
+            logger.error("[activation] failed to rollback ovms.yaml: %s", e_rb)
+        return 1
+
+    result = smoke_load.check(decl)
+
+    if result.status == "error":
+        logger.error("[activation] smoke-load validation failed: %s", result.summary)
+        if result.details.get("fail_markers"):
+            for marker in result.details["fail_markers"]:
+                logger.error("  %s", marker)
+        if result.details.get("log_tail"):
+            logger.error("[activation] last log lines:")
+            for line in result.details["log_tail"]:
+                logger.error("  %s", line)
+
+        # Rollback ovms.yaml from in-memory snapshot.
+        try:
+            config_path.write_text(original_text, encoding="utf-8")
+            logger.info("[activation] rolled back ovms.yaml from snapshot")
+        except OSError as e_rb:
+            logger.error("[activation] failed to rollback ovms.yaml: %s", e_rb)
+            return 1
+
+        # Re-run apply to rebuild config.json and graphs under reverted profile.
+        try:
+            rc_reapply = apply.run(apply_ctx)
+            if rc_reapply != 0:
+                logger.error("[activation] reapply after rollback failed (rc=%d)", rc_reapply)
+                return 1
+            logger.info("[activation] reapplied config.json and graphs after rollback")
+        except Exception as e_reapply:
+            logger.error("[activation] reapply raised exception: %s", e_reapply)
+            return 1
+
+        return 1
+
+    if result.status == "warn":
+        logger.warning("[activation] smoke-load warning: %s", result.summary)
+        if result.hint:
+            logger.info("  hint: %s", result.hint)
 
     # Log final state.
     if target is not None:

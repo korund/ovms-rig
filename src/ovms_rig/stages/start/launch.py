@@ -10,8 +10,8 @@ from pathlib import Path
 from ovms_rig import log as logging_setup
 from ovms_rig.config import ConfigError, load_declaration
 from ovms_rig.env import build_env
+from ovms_rig.command import build as build_command
 from ovms_rig.probes import registry, ovms_binary
-from ovms_rig.stages.start.command import build as build_command
 from ovms_rig.stages.start.signals import install as install_signals
 
 logger = logging.getLogger(__name__)

@@ -15,6 +15,13 @@ _RUNTIME_FLAGS: dict[str, str] = {
     "log_level": "--log_level",
 }
 
+# Flags that must not appear in extras (managed by rig, not user).
+_MANAGED_FLAGS: frozenset[str] = frozenset({
+    "--log_level",
+    "--log_path",
+    "--config_path",
+})
+
 
 def _flags_present(extras: list[str]) -> frozenset[str]:
     """Return the set of '--flag' tokens already present in extras."""
@@ -27,6 +34,7 @@ def build(
     runtime: "Runtime",
     local_runtime: "LocalRuntime",
     extras: list[str],
+    log_level_override: str | None = None,
 ) -> list[str]:
     """Return the argv list to pass to Popen.
 
@@ -43,18 +51,46 @@ def build(
                        per-machine flags such as cache_dir.
         extras: Extra CLI tokens forwarded verbatim from the rig start
                 command (e.g. ['--port', '9000', '--log_level', 'DEBUG']).
+        log_level_override: If provided, overrides runtime.log_level. Used by
+                           probes to force DEBUG regardless of YAML config.
 
     Returns a list of strings ready for subprocess.Popen(args=...).
-    """
-    cmd: list[str] = [str(binary), "--config_path", str(config_json)]
 
+    Raises:
+        ValueError: If extras contains managed flags (--log_level, --log_path,
+                   --config_path).
+    """
     already_in_extras = _flags_present(extras)
+
+    # Guard against managed flags in extras.
+    for managed_flag in _MANAGED_FLAGS:
+        if managed_flag in already_in_extras:
+            if managed_flag == "--log_level":
+                raise ValueError(
+                    "--log_level is not allowed in extras; "
+                    "use the global --log-level flag on rig"
+                )
+            elif managed_flag == "--log_path":
+                raise ValueError(
+                    "--log_path is managed by rig; ovms logs flow through rig's stdio"
+                )
+            elif managed_flag == "--config_path":
+                raise ValueError(
+                    "--config_path is managed by rig; "
+                    "the config is rendered from the declaration"
+                )
+
+    cmd: list[str] = [str(binary), "--config_path", str(config_json)]
 
     for field, flag in _RUNTIME_FLAGS.items():
         if flag in already_in_extras:
             # CLI extra takes precedence; skip the YAML value.
             continue
-        value = getattr(runtime, field, None)
+        if flag == "--log_level":
+            # Use override if provided; otherwise fall back to YAML.
+            value = log_level_override if log_level_override is not None else getattr(runtime, field, None)
+        else:
+            value = getattr(runtime, field, None)
         if value is not None:
             cmd.extend([flag, str(value)])
 

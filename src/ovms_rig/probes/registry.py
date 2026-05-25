@@ -4,10 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ovms_rig.config import ConfigError, Declaration, load_declaration
-from ovms_rig.probes import live_config, models, ovms_binary, port, profiles, repository
+from ovms_rig.probes import live_config, models, ovms_binary, port, profiles, repository, smoke_load
 from ovms_rig.report import CheckResult
+
+if TYPE_CHECKING:
+    from ovms_rig.probes.report import Report
 
 ProbeFn = Callable[[Declaration], CheckResult]
 
@@ -41,6 +45,7 @@ PROBES: dict[str, Probe] = {
     "profiles": Probe("profiles", profiles.check),
     "port": Probe("rest port", port.check),
     "live_config": Probe("live config", live_config.check),
+    "smoke_load": Probe("smoke-load", smoke_load.check),
 }
 
 
