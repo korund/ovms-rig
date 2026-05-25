@@ -1,9 +1,9 @@
-"""Direct manipulation of config.json to register mediapipe_config_list entries.
+"""Direct manipulation of config.json: rig owns the file.
 
-Instead of shelling out to `ovms --add_to_config`, this module reads/writes
-the config.json directly. Two modes of operation:
-- register_mediapipe_entry: upsert a single entry
-- render_mediapipe_entries: render the entire list as exact projection of desired entries
+config.json is rewritten as an exact projection of the active profile.
+Any pre-existing content (model_config_list left over from another tool,
+stray mediapipe entries, unknown keys) is discarded. Declarative contract:
+what is declared in ovms.yaml, is what runs.
 
 Entry structure:
   {
@@ -22,120 +22,31 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def register_mediapipe_entry(
-    config_path: Path,
-    entry_name: str,
-    base_path: Path,
-    graph_path: str,
-) -> None:
-    """Register a mediapipe_config_list entry in config.json.
-
-    config_path: path to config.json (created if missing).
-    entry_name: name of the model entry.
-    base_path: absolute path to model directory.
-    graph_path: relative path from base_path to the graph file
-                (typically "graph.<model_name>.pbtxt").
-
-    Raises OSError if file I/O fails, ValueError if JSON is malformed.
-    """
-    # Load existing config or start with empty dict.
-    if config_path.exists():
-        try:
-            data = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON in {config_path}: {exc}") from exc
-    else:
-        data = {}
-
-    # Ensure mediapipe_config_list exists.
-    if "mediapipe_config_list" not in data:
-        data["mediapipe_config_list"] = []
-
-    entries = data["mediapipe_config_list"]
-
-    # Find and update or append.
-    found = False
-    for entry in entries:
-        if entry.get("name") == entry_name:
-            entry["base_path"] = str(base_path)
-            entry["graph_path"] = graph_path
-            found = True
-            break
-
-    if not found:
-        entries.append({
-            "name": entry_name,
-            "base_path": str(base_path),
-            "graph_path": graph_path,
-        })
-
-    # Write back with nice formatting.
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    logger.debug("[registry] registered mediapipe entry: name=%s, base_path=%s, graph_path=%s",
-                 entry_name, base_path, graph_path)
-
-
 def render_mediapipe_entries(
     config_path: Path,
     desired_entries: dict[str, tuple[Path, str]],
 ) -> None:
-    """Render mediapipe_config_list as exact projection of desired_entries.
+    """Rewrite config.json as exact projection of desired_entries.
 
     desired_entries: dict mapping model_name -> (base_path, graph_path).
-    Replaces mediapipe_config_list entirely with entries from desired_entries,
-    removing any entries not in the new set. Other top-level config.json keys
-    remain untouched.
-
     If desired_entries is empty, mediapipe_config_list becomes [].
 
-    Raises OSError if file I/O fails, ValueError if JSON is malformed.
+    Raises OSError if file I/O fails.
     """
-    # Load existing config or start with empty dict.
-    if config_path.exists():
-        try:
-            data = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON in {config_path}: {exc}") from exc
-    else:
-        data = {}
+    rendered = [
+        {
+            "name": model_name,
+            "base_path": str(base_path),
+            "graph_path": graph_path,
+        }
+        for model_name, (base_path, graph_path) in desired_entries.items()
+    ]
 
-    # Ensure mediapipe_config_list exists.
-    if "mediapipe_config_list" not in data:
-        data["mediapipe_config_list"] = []
+    data = {
+        "model_config_list": [],
+        "mediapipe_config_list": rendered,
+    }
 
-    entries = data["mediapipe_config_list"]
-
-    # Build map of existing entries by name for efficient lookup.
-    # Skip entries without a name (warn if found).
-    existing_by_name = {}
-    for e in entries:
-        entry_name = e.get("name")
-        if entry_name is None:
-            logger.warning("[registry] skipping entry without name in existing config.json: %s", e)
-            continue
-        existing_by_name[entry_name] = e
-
-    # Render: keep only entries in desired_entries, update or add as needed.
-    rendered = []
-    for model_name, (base_path, graph_path) in desired_entries.items():
-        if model_name in existing_by_name:
-            # Update existing entry.
-            entry = existing_by_name[model_name]
-            entry["base_path"] = str(base_path)
-            entry["graph_path"] = graph_path
-            rendered.append(entry)
-        else:
-            # Add new entry.
-            rendered.append({
-                "name": model_name,
-                "base_path": str(base_path),
-                "graph_path": graph_path,
-            })
-
-    data["mediapipe_config_list"] = rendered
-
-    # Write back with nice formatting.
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    logger.debug("[registry] rendered mediapipe entries: desired=%s", list(desired_entries.keys()))
+    logger.debug("[registry] rendered config.json: desired=%s", list(desired_entries.keys()))
