@@ -193,3 +193,17 @@ def test_remove_blocked_with_force_override(
 
     # Directory should be gone.
     assert not model_dir.exists()
+
+
+def test_format_size_units() -> None:
+    """_format_size uses the correct unit at each magnitude boundary."""
+    assert remove._format_size(0) == "0 B"
+    assert remove._format_size(512) == "512 B"
+    assert remove._format_size(1024) == "1.0 KB"
+    assert remove._format_size(1536) == "1.5 KB"
+    assert remove._format_size(1024 * 1024) == "1.0 MB"
+    # ~626 MB used to render as "597.4 GB" before the KB unit was added.
+    size_626mb = 626 * 1024 * 1024
+    assert remove._format_size(size_626mb).endswith(" MB")
+    assert remove._format_size(1024 ** 3) == "1.0 GB"
+    assert remove._format_size(1024 ** 4) == "1.0 TB"

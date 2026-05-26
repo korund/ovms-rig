@@ -177,7 +177,7 @@ def _dir_size(path: Path) -> int:
 
 def _format_size(size_bytes: int) -> str:
     """Format bytes to human-readable string (GB, MB, etc.)."""
-    for unit in ("B", "MB", "GB", "TB"):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
         if size_bytes < 1024:
             if unit == "B":
                 return f"{size_bytes} {unit}"
