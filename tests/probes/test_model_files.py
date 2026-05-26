@@ -135,12 +135,12 @@ def test_all_files_present(tmp_path):
     ep_dir = store / "org" / "main"
     ep_dir.mkdir(parents=True)
     (ep_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (ep_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (ep_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     draft_dir = store / "org" / "draft"
     draft_dir.mkdir(parents=True)
     (draft_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (draft_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (draft_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     decl = Declaration(
         ovms=ovms,
@@ -168,12 +168,12 @@ def test_draft_model_deduplication(tmp_path):
     ep_dir = store / "org" / "main"
     ep_dir.mkdir(parents=True)
     (ep_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (ep_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (ep_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     draft_dir = store / "org" / "draft"
     draft_dir.mkdir(parents=True)
     (draft_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (draft_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (draft_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     decl = Declaration(
         ovms=ovms,
@@ -201,7 +201,7 @@ def test_model_dir_not_present_skipped(tmp_path):
     ep_dir = store / "org" / "main"
     ep_dir.mkdir(parents=True)
     (ep_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (ep_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (ep_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     decl = Declaration(
         ovms=ovms,
@@ -229,13 +229,13 @@ def test_graph_pbtxt_missing_error(tmp_path):
     # Create ep_dir with generation_config but no graph.pbtxt.
     ep_dir = store / "org" / "main"
     ep_dir.mkdir(parents=True)
-    (ep_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (ep_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     # Create draft_dir with both files.
     draft_dir = store / "org" / "draft"
     draft_dir.mkdir(parents=True)
     (draft_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
-    (draft_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+    (draft_dir / "generation_config.json.orig").write_text("{}", encoding="utf-8")
 
     decl = Declaration(
         ovms=ovms,
@@ -249,17 +249,17 @@ def test_graph_pbtxt_missing_error(tmp_path):
     assert result.status == "error"
     assert result.details["missing_required"] == {"ep": ["graph.pbtxt"]}
     assert "1/2 models missing required files" in result.summary
-    assert result.hint and "missing graph.pbtxt blocks OVMS load" in result.hint
+    assert result.hint and "missing required files" in result.hint
 
 
-def test_generation_config_missing_ok(tmp_path):
-    """generation_config.json missing but graph.pbtxt present -> status=ok."""
+def test_generation_config_orig_missing_error(tmp_path):
+    """generation_config.json.orig missing -> status=error, in missing_required."""
     cfg = tmp_path / "ovms.yaml"
     cfg.write_text(OVMS_YAML_MULTIPLE_PROFILES, encoding="utf-8")
     ovms = load_ovms(cfg)
     store = tmp_path / "store"
 
-    # Create ep_dir with graph.pbtxt but no generation_config.json.
+    # Create ep_dir with graph.pbtxt but no generation_config.json.orig.
     ep_dir = store / "org" / "main"
     ep_dir.mkdir(parents=True)
     (ep_dir / "graph.pbtxt").write_text("graph", encoding="utf-8")
@@ -278,10 +278,10 @@ def test_generation_config_missing_ok(tmp_path):
     )
 
     result = model_files.check(decl)
-    assert result.status == "ok"
-    assert result.details["missing_required"] == {}
-    assert result.details["missing_optional"] == {
-        "ep": ["generation_config.json"],
-        "draft_model": ["generation_config.json"],
+    assert result.status == "error"
+    assert result.details["missing_required"] == {
+        "ep": ["generation_config.json.orig"],
+        "draft_model": ["generation_config.json.orig"],
     }
-    assert result.hint and "missing generation_config.json drops sampling overrides" in result.hint
+    assert result.details["missing_optional"] == {}
+    assert result.hint and "missing required files" in result.hint

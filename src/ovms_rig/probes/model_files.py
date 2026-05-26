@@ -2,7 +2,9 @@
 
 Verifies that each model in the active profile has:
   - graph.pbtxt (required) - missing blocks OVMS load
-  - generation_config.json (optional) - missing drops sampling overrides
+  - generation_config.json.orig (required) - pristine snapshot from fetch;
+    live generation_config.json is regenerated from it on every activation,
+    so the .orig is the load-bearing artifact, not the .json
 
 Silently skips models whose directories do not exist on disk (handled by
 repository.inventory probe). Returns ok if no active profile is set.
@@ -67,18 +69,21 @@ def check(decl: Declaration) -> CheckResult:
             checked.append(check_model_name)
 
             # Check required files.
-            graph_file = model_dir / "graph.pbtxt"
-            if not graph_file.exists():
-                if check_model_name not in missing_required:
-                    missing_required[check_model_name] = []
-                missing_required[check_model_name].append("graph.pbtxt")
+            required_files = ("graph.pbtxt", "generation_config.json.orig")
+            for fname in required_files:
+                if not (model_dir / fname).exists():
+                    if check_model_name not in missing_required:
+                        missing_required[check_model_name] = []
+                    missing_required[check_model_name].append(fname)
 
             # Check optional files.
-            gen_config_file = model_dir / "generation_config.json"
-            if not gen_config_file.exists():
-                if check_model_name not in missing_optional:
-                    missing_optional[check_model_name] = []
-                missing_optional[check_model_name].append("generation_config.json")
+            # (None yet -- placeholder; add filenames to this tuple as needed.)
+            optional_files: tuple[str, ...] = ()
+            for fname in optional_files:
+                if not (model_dir / fname).exists():
+                    if check_model_name not in missing_optional:
+                        missing_optional[check_model_name] = []
+                    missing_optional[check_model_name].append(fname)
 
     # Deduplicate checked list and sort.
     checked = sorted(set(checked))
@@ -94,9 +99,7 @@ def check(decl: Declaration) -> CheckResult:
     # Build hint.
     hints = []
     if missing_required:
-        hints.append("missing graph.pbtxt blocks OVMS load")
-    if missing_optional:
-        hints.append("missing generation_config.json drops sampling overrides")
+        hints.append("missing required files block OVMS load or activation; re-fetch the model")
     hint = "; ".join(hints) if hints else None
 
     return CheckResult(
