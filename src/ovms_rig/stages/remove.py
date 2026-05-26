@@ -88,8 +88,9 @@ def run(ctx: dict) -> int:
 
         # Remove from config.json mediapipe_config_list.
         config_json_path = store / "config.json"
+        config_entry_removed = False
         if config_json_path.exists():
-            _remove_from_config(config_json_path, repository_name)
+            config_entry_removed = _remove_from_config(config_json_path, repository_name)
 
         # Delete the model directory.
         shutil.rmtree(model_path)
@@ -102,7 +103,8 @@ def run(ctx: dict) -> int:
         logger.info("removed: %s", repository_name)
         logger.info("  path: %s", model_path)
         logger.info("  size: %s", size_str)
-        logger.info("  config.json: entry removed (mediapipe_config_list)")
+        if config_entry_removed:
+            logger.info("  config.json: entry removed (mediapipe_config_list)")
 
         # Warn about orphan draft references.
         orphans = _find_orphan_drafts(ovms, repository_name)
@@ -135,7 +137,7 @@ def _find_references(ovms, repository_name: str) -> dict[str, set[tuple[str, str
                 if profile_name not in references:
                     references[profile_name] = set()
                 references[profile_name].add(
-                    ("models entry", f"models.{model_name}")
+                    ("models entry", f"models.{model_name}.source")
                 )
 
             # Check if repository_name is a draft_model in this profile.
@@ -184,19 +186,19 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} PB"
 
 
-def _remove_from_config(config_json_path: Path, repository_name: str) -> None:
+def _remove_from_config(config_json_path: Path, repository_name: str) -> bool:
     """Remove entry with name=repository_name from mediapipe_config_list.
 
-    If no mediapipe_config_list exists or repository_name not in it, no-op.
+    Returns True if an entry was actually removed, False otherwise.
     """
     try:
         data = json.loads(config_json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         # If config.json doesn't exist or is malformed, ignore.
-        return
+        return False
 
     if "mediapipe_config_list" not in data:
-        return
+        return False
 
     entries = data["mediapipe_config_list"]
 
@@ -211,6 +213,8 @@ def _remove_from_config(config_json_path: Path, repository_name: str) -> None:
         data["mediapipe_config_list"] = reconciled
         config_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         logger.debug("[remove] config.json: entry '%s' removed", repository_name)
+        return True
+    return False
 
 
 def _cleanup_empty_parents(directory: Path, stop_at: Path) -> None:
