@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import sys
 from pathlib import Path
 
 from ovms_rig import log as logging_setup
 from ovms_rig.config import ConfigError, load_declaration
 from ovms_rig.env import build_env
 from ovms_rig.command import build as build_command
+from ovms_rig.proc import spawn_kwargs
 from ovms_rig.probes import registry, ovms_binary
 from ovms_rig.stages.start.signals import install as install_signals
 
@@ -66,12 +66,9 @@ def run(ctx: dict) -> int:
 
     logger.info("starting ovms: %s", " ".join(cmd))
 
-    # On win32 create a new process group so we can send CTRL_BREAK_EVENT.
-    kwargs: dict = {}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-
-    proc = subprocess.Popen(cmd, env=env, **kwargs)
+    kwargs = spawn_kwargs()
+    kwargs["env"] = env
+    proc = subprocess.Popen(cmd, **kwargs)
     install_signals(proc)
 
     proc.wait()

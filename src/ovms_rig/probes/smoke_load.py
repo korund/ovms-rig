@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import sys
 import tempfile
 import time
 from collections import deque
@@ -19,6 +18,7 @@ from pathlib import Path
 from ovms_rig.config import Declaration
 from ovms_rig.env import build_env
 from ovms_rig.command import build as build_command
+from ovms_rig.proc import spawn_kwargs, terminate_tree
 from ovms_rig.probes import ovms_binary
 from ovms_rig.report import CheckResult
 
@@ -176,16 +176,12 @@ def _probe_ovms(
     proc: subprocess.Popen | None = None
 
     try:
-        kwargs: dict = {"env": env}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs = spawn_kwargs()
+        kwargs["env"] = env
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            **kwargs,
-        )
+        proc = subprocess.Popen(cmd, **kwargs)
 
         start_time = time.time()
         timeout_sec = 30
@@ -256,7 +252,7 @@ def _probe_ovms(
 
     finally:
         if proc is not None and proc.poll() is None:
-            _kill_process_tree(proc)
+            terminate_tree(proc, graceful_timeout=0.0)
 
         try:
             os.unlink(log_path)
@@ -273,36 +269,3 @@ def _is_fail_line(line: str) -> bool:
     if "Trying to parse mediapipe graph definition:" in line and "failed" in line:
         return True
     return False
-
-
-def _kill_process_tree(proc: subprocess.Popen) -> None:
-    """Kill process and all its children."""
-    if proc.poll() is not None:
-        return
-
-    pid = proc.pid
-    try:
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True,
-                timeout=5,
-                check=False,
-            )
-        else:
-            import os
-            import signal
-
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            except (OSError, ProcessLookupError):
-                pass
-
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
-
-        logger.debug("[smoke-load] killed process tree (PID %d)", pid)
-    except Exception as e:
-        logger.warning("[smoke-load] failed to kill process tree (PID %d): %s", pid, e)

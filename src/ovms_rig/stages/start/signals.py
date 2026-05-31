@@ -18,6 +18,8 @@ import signal
 import subprocess
 import sys
 
+from ovms_rig.proc import terminate_tree
+
 GRACEFUL_TIMEOUT_S = 30
 
 logger = logging.getLogger(__name__)
@@ -81,13 +83,5 @@ def _install_win32(proc: subprocess.Popen) -> None:  # type: ignore[type-arg]
 # ---------------------------------------------------------------------------
 
 def _wait_or_kill(proc: subprocess.Popen) -> None:  # type: ignore[type-arg]
-    """Wait up to GRACEFUL_TIMEOUT_S then SIGKILL."""
-    try:
-        proc.wait(timeout=GRACEFUL_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        logger.warning(
-            "ovms did not exit within %ds, killing pid=%d",
-            GRACEFUL_TIMEOUT_S, proc.pid,
-        )
-        proc.kill()
-        proc.wait()
+    """Wait up to GRACEFUL_TIMEOUT_S then force-kill."""
+    terminate_tree(proc, graceful_timeout=GRACEFUL_TIMEOUT_S)

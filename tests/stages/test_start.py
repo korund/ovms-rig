@@ -40,17 +40,16 @@ def _make_proc(returncode=0):
 
 def test_wait_or_kill_exits_within_timeout():
     proc = _make_proc()
-    _wait_or_kill(proc)
-    proc.wait.assert_called_once_with(timeout=GRACEFUL_TIMEOUT_S)
-    proc.kill.assert_not_called()
+    with patch("ovms_rig.stages.start.signals.terminate_tree") as mock_terminate:
+        _wait_or_kill(proc)
+        mock_terminate.assert_called_once_with(proc, graceful_timeout=GRACEFUL_TIMEOUT_S)
 
 
 def test_wait_or_kill_kills_after_timeout():
     proc = _make_proc()
-    # First wait raises TimeoutExpired, second (after kill) returns normally.
-    proc.wait.side_effect = [subprocess.TimeoutExpired(cmd="ovms", timeout=GRACEFUL_TIMEOUT_S), None]
-    _wait_or_kill(proc)
-    proc.kill.assert_called_once()
+    with patch("ovms_rig.stages.start.signals.terminate_tree") as mock_terminate:
+        _wait_or_kill(proc)
+        mock_terminate.assert_called_once_with(proc, graceful_timeout=GRACEFUL_TIMEOUT_S)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals only")
