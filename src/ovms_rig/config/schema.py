@@ -41,10 +41,30 @@ class Runtime(_Strict):
 
 
 class ModelIdentity(_Strict):
-    hf: str
+    # Model source kind: exactly one of hf or dir must be set.
+    # hf: pulled via `ovms --pull` (HuggingFace coordinate org/repo).
+    # dir: local directory holding weights (not fetched, user-managed).
+    hf: str | None = None
+    dir: str | None = None
     # None -> plain model (model_config_list, no graph, not pulled).
     task: Task | None = None
     revision: str | None = None
+
+    @model_validator(mode="after")
+    def _source_kind_is_exclusive(self) -> ModelIdentity:
+        # Exactly one of hf or dir must be set. Both or neither is an error.
+        # Structure supports adding a third kind (e.g., github) later: just add
+        # a field and update this validator to count set fields.
+        sources_set = sum([
+            self.hf is not None,
+            self.dir is not None,
+        ])
+        if sources_set != 1:
+            raise ValueError(
+                f"exactly one of hf or dir must be set; "
+                f"got hf={self.hf!r}, dir={self.dir!r}"
+            )
+        return self
 
 
 class Graph(_Strict):

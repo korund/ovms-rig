@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from ovms_rig.config.schema import Graph, ModelEntry
+from ovms_rig.config.schema import Graph, ModelEntry, ModelIdentity
 
 
 def test_graph_rejects_unknown_field() -> None:
@@ -87,3 +87,38 @@ def test_entry_plain_rejects_both_graph_and_plain() -> None:
             graph=Graph(),
             plain={"batch_size": 4},
         )
+
+
+def test_model_identity_hf_alone_ok() -> None:
+    # hf-based model (traditional HuggingFace source) is valid.
+    m = ModelIdentity(hf="OpenVINO/Qwen3-14B", task="text_generation")
+    assert m.hf == "OpenVINO/Qwen3-14B"
+    assert m.dir is None
+    assert m.task == "text_generation"
+
+
+def test_model_identity_dir_alone_ok() -> None:
+    # dir-based model (local directory source) is valid.
+    m = ModelIdentity(dir="local/models/qwen")
+    assert m.dir == "local/models/qwen"
+    assert m.hf is None
+    assert m.task is None
+
+
+def test_model_identity_dir_absolute_path_ok() -> None:
+    # dir-based model with absolute path is valid.
+    m = ModelIdentity(dir="/opt/models/mobilenet")
+    assert m.dir == "/opt/models/mobilenet"
+    assert m.hf is None
+
+
+def test_model_identity_rejects_both_hf_and_dir() -> None:
+    # Exactly one source kind is required; both is an error.
+    with pytest.raises(ValidationError, match="exactly one of hf or dir must be set"):
+        ModelIdentity(hf="OpenVINO/Qwen", dir="local/models/qwen")
+
+
+def test_model_identity_rejects_neither_hf_nor_dir() -> None:
+    # Neither hf nor dir is an error.
+    with pytest.raises(ValidationError, match="exactly one of hf or dir must be set"):
+        ModelIdentity(task="text_generation")

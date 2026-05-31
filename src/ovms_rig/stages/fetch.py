@@ -60,18 +60,25 @@ def run(ctx: dict) -> int:
     store.mkdir(parents=True, exist_ok=True)
 
     model_identity = ovms.repository[repository_name]
-    dest = store / model_identity.hf
 
-    # Plain (non-task) models are not pulled by `ovms --pull`; their files are
-    # placed in the store directly by the user. Fetch only verifies presence.
-    if model_identity.task is None:
+    # Determine the destination path based on source kind.
+    if model_identity.dir is not None:
+        dest = store / model_identity.dir
+    else:
+        dest = store / model_identity.hf
+
+    # dir-source models are user-managed (not pulled). If task is also None,
+    # the model is plain. Skip fetch for both cases.
+    if model_identity.dir is not None or model_identity.task is None:
         if dest.exists():
-            logger.info("[skip] '%s' is a plain model, present at %s", repository_name, dest)
+            kind = "dir-source" if model_identity.dir is not None else "plain"
+            logger.info("[skip] '%s' is a %s model, present at %s", repository_name, kind, dest)
             return 0
+        kind = "dir-source" if model_identity.dir is not None else "plain"
         logger.error(
-            "[fetch] '%s' is a plain model (no task); `ovms --pull` cannot fetch it. "
+            "[fetch] '%s' is a %s model; `ovms --pull` cannot fetch it. "
             "Place its files at %s manually, then re-run.",
-            repository_name, dest,
+            repository_name, kind, dest,
         )
         return 1
 

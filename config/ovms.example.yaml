@@ -23,9 +23,14 @@ repository:
     task: text_generation
   # Plain (non-task) models: detection, classification, or other ONNX/OpenVINO IR models.
   # These are registered via model_config_list, not mediapipe graphs.
-  # No task field; rig does not fetch them (user places files in store manually).
+  # You may declare them via hf (pulled) or dir (local directory, user-managed).
+  # Example: dir-based plain model with relative directory path.
   # mobilenet-v2:
-  #   hf: some/mobilenet-v2
+  #   dir: local/mobilenet-v2
+  #   # task is omitted/None -> plain model
+  # Example: dir-based plain model with absolute directory path.
+  # yolo-detector:
+  #   dir: /opt/models/yolo-v8
   #   # task is omitted/None -> plain model
 
 # Profiles group model endpoints into sets that can be brought up together.

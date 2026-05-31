@@ -28,6 +28,10 @@ repository:
   qwen-draft:
     hf: org/qwen-draft-int8-ov
     task: text_generation
+  plain-model:
+    hf: some/plain-model
+  dir-model:
+    dir: local/dir-model
 """
 
 LOCAL_YAML = """
@@ -188,3 +192,34 @@ def test_fetch_does_not_overwrite_existing_orig(rig: dict,
 
     # mtime should not have changed (file was not written).
     assert mtime_2 == mtime_1, "existing .orig should not be overwritten"
+
+
+def test_fetch_plain_model_skips(rig: dict, recorder: Recorder) -> None:
+    """Fetch skips plain (non-task) models."""
+    # Plain models have no task; they are user-placed in the store.
+    # Attempt to fetch a plain model should fail (not present).
+    result = _invoke(rig, "plain-model")
+    assert result.exit_code == 1
+    assert len(recorder.calls) == 0  # No pull call made.
+    assert "plain model" in result.output.lower() or "cannot fetch" in result.output.lower()
+
+
+def test_fetch_dir_model_skips(rig: dict, recorder: Recorder) -> None:
+    """Fetch skips dir-source models (user-managed local directories)."""
+    # dir-source models are not pulled; they are user-placed.
+    # Attempt to fetch without the directory present should fail.
+    result = _invoke(rig, "dir-model")
+    assert result.exit_code == 1
+    assert len(recorder.calls) == 0  # No pull call made.
+    assert "dir-source" in result.output.lower() or "cannot fetch" in result.output.lower()
+
+
+def test_fetch_dir_model_present_skips(rig: dict, recorder: Recorder) -> None:
+    """Fetch skips dir-source models if directory is already present."""
+    # Create the dir-source model directory beforehand.
+    dir_path = rig["store"] / "local" / "dir-model"
+    dir_path.mkdir(parents=True)
+
+    result = _invoke(rig, "dir-model")
+    assert result.exit_code == 0
+    assert len(recorder.calls) == 0  # No pull call made.

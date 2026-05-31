@@ -120,5 +120,11 @@ def check(decl: Declaration) -> CheckResult:
 
 
 def _weights_dir(store: Path, ovms_config, model_key: str) -> Path:
-    """Map a model repository key to its on-disk location (HF-layout)."""
-    return store / ovms_config.repository[model_key].hf
+    """Map a model repository key to its on-disk location.
+
+    Resolves either hf (HuggingFace org/repo) or dir (local directory) source.
+    """
+    from ovms_rig.stages.activation.paths import resolve_model_dir
+
+    model = ovms_config.repository[model_key]
+    return resolve_model_dir(store, model.hf, model.dir)

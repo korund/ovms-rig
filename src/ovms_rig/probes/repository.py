@@ -78,8 +78,14 @@ def check_inventory(decl: Declaration) -> CheckResult:
 
 
 def _weights_dir(store: Path, ovms: OvmsConfig, name: str) -> Path:
-    """Map a declared model name to its on-disk location (HF-layout)."""
-    return store / ovms.repository[name].hf
+    """Map a declared model name to its on-disk location.
+
+    Resolves either hf (HuggingFace org/repo) or dir (local directory) source.
+    """
+    from ovms_rig.stages.activation.paths import resolve_model_dir
+
+    model = ovms.repository[name]
+    return resolve_model_dir(store, model.hf, model.dir)
 
 
 def _nearest_existing_ancestor(path: Path) -> Path | None:

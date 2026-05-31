@@ -1,4 +1,4 @@
-"""Unit tests for apply/paths.py: relative POSIX path resolver."""
+"""Unit tests for apply/paths.py: relative POSIX path resolver and model dir resolution."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ovms_rig.stages.activation.paths import relative_posix
+from ovms_rig.stages.activation.paths import relative_posix, resolve_model_dir
 
 
 class TestSameOrg:
@@ -64,3 +64,53 @@ class TestEdgeCases:
         assert rel.startswith("../")
         assert "draft" in rel
         assert "\\" not in rel
+
+
+class TestResolveModelDir:
+    """Tests for resolve_model_dir: resolves hf or dir source to absolute path."""
+
+    def test_hf_source_returns_store_slash_hf_id(self, tmp_path: Path) -> None:
+        # HF source: store / hf_id
+        store = tmp_path / "models"
+        store.mkdir()
+        hf_id = "OpenVINO/Qwen3-14B"
+        result = resolve_model_dir(store, hf_id=hf_id, local_dir=None)
+        expected = store / hf_id
+        assert result == expected
+
+    def test_dir_source_relative_resolves_to_store_slash_dir(self, tmp_path: Path) -> None:
+        # dir source with relative path: resolved against store, then normalized.
+        store = tmp_path / "models"
+        store.mkdir()
+        local_dir = "local/qwen"
+        result = resolve_model_dir(store, hf_id=None, local_dir=local_dir)
+        expected = (store / local_dir).resolve()
+        assert result == expected
+
+    def test_dir_source_absolute_resolves_to_itself(self, tmp_path: Path) -> None:
+        # dir source with absolute path: used as-is (after resolve() for normalization).
+        abs_dir = tmp_path / "opt" / "models" / "qwen"
+        abs_dir.mkdir(parents=True)
+        store = tmp_path / "models"
+        store.mkdir()
+        result = resolve_model_dir(store, hf_id=None, local_dir=str(abs_dir))
+        assert result == abs_dir.resolve()
+
+    def test_dir_source_relative_nested_path(self, tmp_path: Path) -> None:
+        # dir source with nested relative path.
+        store = tmp_path / "store"
+        store.mkdir()
+        local_dir = "nested/path/to/model"
+        result = resolve_model_dir(store, hf_id=None, local_dir=local_dir)
+        expected = (store / local_dir).resolve()
+        assert result == expected
+        assert "nested" in str(result)
+        assert "path" in str(result)
+        assert "to" in str(result)
+        assert "model" in str(result)
+
+    def test_neither_hf_nor_dir_raises_error(self, tmp_path: Path) -> None:
+        # Both hf_id and local_dir are None: error.
+        store = tmp_path / "models"
+        with pytest.raises(ValueError, match="both.*are None"):
+            resolve_model_dir(store, hf_id=None, local_dir=None)
