@@ -29,7 +29,7 @@ from ovms_rig.config import (
 from ovms_rig.env import build_env
 from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.activation.generation import merge as merge_generation
-from ovms_rig.stages.activation.paths import resolve_model_dir, relative_posix
+from ovms_rig.stages.activation.paths import relative_posix
 from ovms_rig.stages.activation.pbtxt import collect_pbtxt_fields, patch
 from ovms_rig.stages.activation.registry import render_config
 from ovms_rig.stages.activation import cleanup
@@ -98,7 +98,7 @@ def run(ctx: dict) -> int:
         # Record existing sibling-graphs across all repository dirs so
         # rollback preserves graphs from previous activations.
         for identity in ovms.repository.values():
-            repo_dir = resolve_model_dir(store, identity.hf, identity.dir)
+            repo_dir = identity.weights_dir(store)
             if repo_dir.is_dir():
                 existing_graphs.update(
                     g.resolve() for g in repo_dir.glob("graph.*.pbtxt")
@@ -113,7 +113,7 @@ def run(ctx: dict) -> int:
     for model_name in active_models:
         entry = ovms.models[model_name]
         model_identity = ovms.repository[entry.source]
-        target_dir = resolve_model_dir(store, model_identity.hf, model_identity.dir)
+        target_dir = model_identity.weights_dir(store)
 
         if not target_dir.is_dir():
             logger.error(
@@ -149,7 +149,7 @@ def run(ctx: dict) -> int:
         draft_rel: str | None = None
         if entry.draft_model is not None:
             draft_identity = ovms.repository[entry.draft_model]
-            draft_dir = resolve_model_dir(store, draft_identity.hf, draft_identity.dir)
+            draft_dir = draft_identity.weights_dir(store)
             draft_rel = relative_posix(target_dir, draft_dir)
 
         fields = collect_pbtxt_fields(
@@ -261,7 +261,7 @@ def run(ctx: dict) -> int:
     for model_name in active_models:
         entry = ovms.models[model_name]
         model_identity = ovms.repository[entry.source]
-        target_dir = resolve_model_dir(store, model_identity.hf, model_identity.dir).resolve()
+        target_dir = model_identity.weights_dir(store).resolve()
         if model_identity.task is None:
             model_entries[model_name] = (target_dir, entry.device, entry.plugin_config, entry.plain)
         else:

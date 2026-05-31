@@ -82,10 +82,8 @@ def _weights_dir(store: Path, ovms: OvmsConfig, name: str) -> Path:
 
     Resolves either hf (HuggingFace org/repo) or dir (local directory) source.
     """
-    from ovms_rig.stages.activation.paths import resolve_model_dir
-
     model = ovms.repository[name]
-    return resolve_model_dir(store, model.hf, model.dir)
+    return model.weights_dir(store)
 
 
 def _nearest_existing_ancestor(path: Path) -> Path | None:

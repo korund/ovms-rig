@@ -66,6 +66,31 @@ class ModelIdentity(_Strict):
             )
         return self
 
+    def weights_dir(self, store: Path) -> Path:
+        """Return the directory containing this model's weights.
+
+        Branches on source kind (hf vs dir) and returns the appropriate path.
+
+        Args:
+            store: root of the model repository (from local.yaml).
+
+        Returns:
+            Path to the weights directory. Semantics differ by source kind:
+            - hf: returns store / hf (unresolved, may contain symlinks)
+            - dir: returns (store / dir).resolve() (absolute, normalized)
+
+        Note:
+            Structure supports adding a future source kind (e.g., github) as a
+            single additional branch. To add a kind: define the field, update
+            the validator to include it in sources_set, add a branch here.
+        """
+        if self.hf is not None:
+            return store / self.hf
+        if self.dir is not None:
+            return (store / self.dir).resolve()
+        # Should never reach here (validator enforces exactly one is set).
+        raise ValueError("no source kind set (hf or dir)")
+
 
 class Graph(_Strict):
     # All graph fields are patched into graph.pbtxt during apply. `ovms --pull`

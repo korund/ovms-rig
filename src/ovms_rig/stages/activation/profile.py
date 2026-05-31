@@ -197,7 +197,7 @@ def _restore_generation_configs(ovms: OvmsConfig, store: Path, profile_models: l
             )
             continue
 
-        model_dir = store / model_identity.hf
+        model_dir = model_identity.weights_dir(store)
         orig_path = model_dir / "generation_config.json.orig"
         live_path = model_dir / "generation_config.json"
 

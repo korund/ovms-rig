@@ -22,7 +22,7 @@ def cleanup_obsolete_sibling_graphs(store: Path, active_models: set[str], ovms: 
     seen_dirs: set[Path] = set()
 
     for repo_name, identity in ovms.repository.items():
-        model_dir = store / identity.hf
+        model_dir = identity.weights_dir(store)
         if model_dir in seen_dirs or not model_dir.is_dir():
             continue
         seen_dirs.add(model_dir)

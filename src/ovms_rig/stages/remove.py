@@ -16,7 +16,6 @@ from pathlib import Path
 
 from ovms_rig import log as logging_setup
 from ovms_rig.config import ConfigError, load_declaration
-from ovms_rig.stages.activation.paths import model_dir
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ def run(ctx: dict) -> int:
 
     store = local.models.repository_path
     model_identity = ovms.repository[repository_name]
-    model_path = model_dir(store, model_identity.hf)
+    model_path = model_identity.weights_dir(store)
 
     # Check that directory exists (nothing to do if not fetched).
     if not model_path.is_dir():

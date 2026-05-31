@@ -124,7 +124,5 @@ def _weights_dir(store: Path, ovms_config, model_key: str) -> Path:
 
     Resolves either hf (HuggingFace org/repo) or dir (local directory) source.
     """
-    from ovms_rig.stages.activation.paths import resolve_model_dir
-
     model = ovms_config.repository[model_key]
-    return resolve_model_dir(store, model.hf, model.dir)
+    return model.weights_dir(store)

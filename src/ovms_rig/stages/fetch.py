@@ -61,11 +61,8 @@ def run(ctx: dict) -> int:
 
     model_identity = ovms.repository[repository_name]
 
-    # Determine the destination path based on source kind.
-    if model_identity.dir is not None:
-        dest = store / model_identity.dir
-    else:
-        dest = store / model_identity.hf
+    # Resolve model directory (works for both hf and dir sources).
+    dest = model_identity.weights_dir(store)
 
     # dir-source models are user-managed (not pulled). If task is also None,
     # the model is plain. Skip fetch for both cases.
