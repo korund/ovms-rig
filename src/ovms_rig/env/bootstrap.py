@@ -31,10 +31,16 @@ from pathlib import Path
 _PATHLIKE_KEYS = frozenset({"PATH", "LD_LIBRARY_PATH"})
 
 
-def build_env(ovms_path: Path) -> dict[str, str]:
-    """Return a full env dict (current os.environ + ovms overrides)."""
+def build_env(ovms_path: Path, platform: str = sys.platform) -> dict[str, str]:
+    """Return a full env dict (current os.environ + ovms overrides).
+
+    Args:
+        ovms_path: Path to the OVMS installation root.
+        platform: Platform identifier ("win32" or "linux"). Defaults to sys.platform.
+                  Exposed for testing purposes.
+    """
     env = os.environ.copy()
-    for key, value in _overrides(ovms_path).items():
+    for key, value in _overrides(ovms_path, platform=platform).items():
         if key in _PATHLIKE_KEYS:
             env[key] = _prepend(env.get(key), value)
         else:
@@ -42,8 +48,14 @@ def build_env(ovms_path: Path) -> dict[str, str]:
     return env
 
 
-def _overrides(ovms: Path) -> dict[str, str]:
-    if sys.platform == "win32":
+def _overrides(ovms: Path, platform: str = sys.platform) -> dict[str, str]:
+    """Return platform-specific environment overrides.
+
+    Args:
+        ovms: Path to the OVMS installation root.
+        platform: Platform identifier ("win32" or "linux"). Defaults to sys.platform.
+    """
+    if platform == "win32":
         return _win32(ovms)
     return _linux(ovms)
 
