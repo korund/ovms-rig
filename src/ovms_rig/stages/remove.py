@@ -104,7 +104,7 @@ def run(ctx: dict) -> int:
         logger.info("  path: %s", model_path)
         logger.info("  size: %s", size_str)
         if config_entry_removed:
-            logger.info("  config.json: entry removed (mediapipe_config_list)")
+            logger.info("  config.json: entry removed")
 
         # Warn about orphan draft references.
         orphans = _find_orphan_drafts(ovms, repository_name)
@@ -141,7 +141,7 @@ def _find_references(ovms, repository_name: str) -> dict[str, set[tuple[str, str
                 )
 
             # Check if repository_name is a draft_model in this profile.
-            if model_entry.graph.draft_model == repository_name:
+            if model_entry.draft_model == repository_name:
                 if profile_name not in references:
                     references[profile_name] = set()
                 references[profile_name].add(
@@ -158,7 +158,7 @@ def _find_orphan_drafts(ovms, removed_name: str) -> list[tuple[str, str]]:
     """
     orphans = []
     for model_name, model_entry in ovms.models.items():
-        if model_entry.graph.draft_model == removed_name:
+        if model_entry.draft_model == removed_name:
             orphans.append((model_name, removed_name))
     return orphans
 
@@ -187,9 +187,11 @@ def _format_size(size_bytes: int) -> str:
 
 
 def _remove_from_config(config_json_path: Path, repository_name: str) -> bool:
-    """Remove entry with name=repository_name from mediapipe_config_list.
+    """Remove entries named repository_name from both config.json lists.
 
-    Returns True if an entry was actually removed, False otherwise.
+    Covers mediapipe_config_list (LLM) and model_config_list (plain). The
+    plain entry nests its name under "config". Returns True if any entry was
+    actually removed, False otherwise.
     """
     try:
         data = json.loads(config_json_path.read_text(encoding="utf-8"))
@@ -197,24 +199,29 @@ def _remove_from_config(config_json_path: Path, repository_name: str) -> bool:
         # If config.json doesn't exist or is malformed, ignore.
         return False
 
-    if "mediapipe_config_list" not in data:
-        return False
+    removed = False
 
-    entries = data["mediapipe_config_list"]
+    mediapipe = data.get("mediapipe_config_list")
+    if isinstance(mediapipe, list):
+        reconciled = [e for e in mediapipe if e.get("name") != repository_name]
+        if len(reconciled) < len(mediapipe):
+            data["mediapipe_config_list"] = reconciled
+            removed = True
 
-    # Keep entries that don't match repository_name.
-    reconciled = [
-        e for e in entries
-        if e.get("name") != repository_name
-    ]
+    model_list = data.get("model_config_list")
+    if isinstance(model_list, list):
+        reconciled = [
+            e for e in model_list
+            if e.get("config", {}).get("name") != repository_name
+        ]
+        if len(reconciled) < len(model_list):
+            data["model_config_list"] = reconciled
+            removed = True
 
-    if len(reconciled) < len(entries):
-        # Something was removed; write back.
-        data["mediapipe_config_list"] = reconciled
+    if removed:
         config_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         logger.debug("[remove] config.json: entry '%s' removed", repository_name)
-        return True
-    return False
+    return removed
 
 
 def _cleanup_empty_parents(directory: Path, stop_at: Path) -> None:

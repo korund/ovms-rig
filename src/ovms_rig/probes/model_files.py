@@ -57,9 +57,13 @@ def check(decl: Declaration) -> CheckResult:
         dirs_to_check.append((model_name, "primary", primary_dir))
 
         # Draft model directory, if specified.
-        if entry.graph.draft_model:
-            draft_dir = _weights_dir(store, ovms, entry.graph.draft_model)
+        if entry.draft_model:
+            draft_dir = _weights_dir(store, ovms, entry.draft_model)
             dirs_to_check.append((model_name, "draft", draft_dir))
+
+        # Plain (non-task) models have no graph.pbtxt / generation_config; their
+        # directory presence is the only artifact this probe can assert.
+        is_plain = ovms.repository[entry.source].task is None
 
         for check_model_name, model_type, model_dir in dirs_to_check:
             # Skip if directory does not exist on disk.
@@ -69,7 +73,7 @@ def check(decl: Declaration) -> CheckResult:
             checked.append(check_model_name)
 
             # Check required files.
-            required_files = ("graph.pbtxt", "generation_config.json.orig")
+            required_files = () if is_plain else ("graph.pbtxt", "generation_config.json.orig")
             for fname in required_files:
                 if not (model_dir / fname).exists():
                     if check_model_name not in missing_required:

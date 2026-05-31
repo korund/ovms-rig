@@ -1,11 +1,11 @@
-"""Tests for mediapipe_config_list registry rendering."""
+"""Tests for config.json registry rendering (mediapipe + plain lists)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from ovms_rig.stages.activation.registry import render_mediapipe_entries
+from ovms_rig.stages.activation.registry import render_config
 
 
 def test_render_replaces_existing_entries(tmp_path: Path) -> None:
@@ -17,9 +17,9 @@ def test_render_replaces_existing_entries(tmp_path: Path) -> None:
         ],
     }), encoding="utf-8")
 
-    render_mediapipe_entries(config_path, {
+    render_config(config_path, {
         "new_model": (tmp_path / "new", "graph.new.pbtxt"),
-    })
+    }, {})
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
     entries = data["mediapipe_config_list"]
@@ -37,19 +37,64 @@ def test_render_with_empty_desired_entries(tmp_path: Path) -> None:
         ],
     }), encoding="utf-8")
 
-    render_mediapipe_entries(config_path, {})
+    render_config(config_path, {}, {})
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["mediapipe_config_list"] == []
 
 
+def test_render_plain_model_entry(tmp_path: Path) -> None:
+    """Plain models land in model_config_list with target_device."""
+    config_path = tmp_path / "config.json"
+    render_config(config_path, {}, {
+        "doclayout": (tmp_path / "pp-doclayout", "NPU", None),
+    })
+
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert data["mediapipe_config_list"] == []
+    assert data["model_config_list"] == [
+        {
+            "config": {
+                "name": "doclayout",
+                "base_path": str(tmp_path / "pp-doclayout"),
+                "target_device": "NPU",
+            }
+        },
+    ]
+
+
+def test_render_plain_model_with_plugin_config(tmp_path: Path) -> None:
+    """plugin_config is emitted into the plain config object when present."""
+    config_path = tmp_path / "config.json"
+    render_config(config_path, {}, {
+        "doclayout": (tmp_path / "d", "NPU", {"PERFORMANCE_HINT": "LATENCY"}),
+    })
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))["model_config_list"][0]["config"]
+    assert cfg["plugin_config"] == {"PERFORMANCE_HINT": "LATENCY"}
+
+
+def test_render_mixed_lists(tmp_path: Path) -> None:
+    """Both lists populated independently in one render."""
+    config_path = tmp_path / "config.json"
+    render_config(
+        config_path,
+        {"qwen": (tmp_path / "qwen", "graph.qwen.pbtxt")},
+        {"doclayout": (tmp_path / "doclayout", "NPU", None)},
+    )
+
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert len(data["mediapipe_config_list"]) == 1
+    assert len(data["model_config_list"]) == 1
+
+
 def test_render_wipes_unknown_top_level_keys(tmp_path: Path) -> None:
-    """Rig owns config.json: stray model_config_list / unknown keys are dropped.
+    """Rig owns config.json: stray keys are dropped.
 
     Previously the renderer preserved pre-existing top-level keys, which made
-    config.json "sticky" -- a leftover model_config_list from a different tool
-    would survive every apply. The declarative contract requires the file to
-    be an exact projection of the active profile.
+    config.json "sticky" -- a leftover entry from a different tool would survive
+    every apply. The declarative contract requires the file to be an exact
+    projection of the active profile.
     """
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({
@@ -60,9 +105,9 @@ def test_render_wipes_unknown_top_level_keys(tmp_path: Path) -> None:
         "mediapipe_config_list": [],
     }), encoding="utf-8")
 
-    render_mediapipe_entries(config_path, {
+    render_config(config_path, {
         "m": (tmp_path / "m", "graph.m.pbtxt"),
-    })
+    }, {})
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data == {
@@ -75,9 +120,9 @@ def test_render_wipes_unknown_top_level_keys(tmp_path: Path) -> None:
 
 def test_render_creates_file_when_missing(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
-    render_mediapipe_entries(config_path, {
+    render_config(config_path, {
         "m": (tmp_path / "m", "graph.m.pbtxt"),
-    })
+    }, {})
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["model_config_list"] == []
     assert len(data["mediapipe_config_list"]) == 1

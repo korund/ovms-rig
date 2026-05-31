@@ -71,12 +71,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   draft_ep:
     source: draft
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:
@@ -138,12 +138,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   draft_ep:
     source: draft
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:

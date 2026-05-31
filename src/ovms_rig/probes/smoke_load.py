@@ -47,17 +47,29 @@ def check(decl: Declaration) -> CheckResult:
     ovms_cfg = decl.ovms
     local = decl.local
 
-    # Determine active profile and graph count.
+    # Determine active profile and split models by type: mediapipe (LLM,
+    # task-based) signal load via a graph-init marker; plain (model_config_list)
+    # models signal load via a model status-change to AVAILABLE.
     active_models: set[str] = set()
     for profile_name, profile in ovms_cfg.profiles.items():
         if profile.active:
             active_models = set(profile.models)
             break
 
-    num_graphs = len(active_models)
+    expected_mediapipe = 0
+    expected_plain = 0
+    for name in active_models:
+        entry = ovms_cfg.models.get(name)
+        if entry is None:
+            continue
+        if ovms_cfg.repository[entry.source].task is None:
+            expected_plain += 1
+        else:
+            expected_mediapipe += 1
+    num_expected = expected_mediapipe + expected_plain
 
-    # No active profile: nothing to validate.
-    if num_graphs == 0:
+    # No active profile / no models: nothing to validate.
+    if num_expected == 0:
         return CheckResult(
             name=NAME,
             status="ok",
@@ -89,7 +101,10 @@ def check(decl: Declaration) -> CheckResult:
     # Run the probe.
     fail_markers = []
     try:
-        fail_markers, recent_lines = _probe_ovms(binary, config_json, num_graphs, ovms_cfg.runtime, local.runtime)
+        fail_markers, recent_lines = _probe_ovms(
+            binary, config_json, expected_mediapipe, expected_plain,
+            ovms_cfg.runtime, local.runtime,
+        )
     except ProbeFailure as e:
         details = {"log_tail": e.log_tail}
         return CheckResult(
@@ -116,14 +131,15 @@ def check(decl: Declaration) -> CheckResult:
     return CheckResult(
         name=NAME,
         status="ok",
-        summary=f"OVMS accepted config: {num_graphs} graph(s) validated",
+        summary=f"OVMS accepted config: {num_expected} model(s) validated",
     )
 
 
 def _probe_ovms(
     binary: Path,
     config_json: Path,
-    num_graphs: int,
+    expected_mediapipe: int,
+    expected_plain: int,
     runtime,
     local_runtime,
 ) -> tuple[list[str], list[str]]:
@@ -132,7 +148,8 @@ def _probe_ovms(
     Args:
         binary: Path to ovms executable.
         config_json: Path to config.json to probe.
-        num_graphs: Expected number of graphs to initialize.
+        expected_mediapipe: number of LLM graphs expected to initialize.
+        expected_plain: number of plain models expected to reach AVAILABLE.
         runtime: Parsed Runtime section of ovms.yaml.
         local_runtime: Local runtime config (cache_dir, etc).
 
@@ -140,7 +157,7 @@ def _probe_ovms(
         Tuple of (fail_marker_lines, recent_log_lines).
 
     Raises:
-        ProbeFailure: On timeout or graph initialization failure, with log tail.
+        ProbeFailure: On timeout or load failure, with log tail.
     """
     cmd = build_command(binary, config_json, runtime, local_runtime, [], log_level_override="DEBUG")
     env = build_env(binary.parent)
@@ -154,7 +171,8 @@ def _probe_ovms(
 
     fail_lines: list[str] = []
     recent_lines: deque[str] = deque(maxlen=50)
-    initialized_count = 0
+    mediapipe_count = 0
+    plain_count = 0
     proc: subprocess.Popen | None = None
 
     try:
@@ -178,7 +196,8 @@ def _probe_ovms(
                 if elapsed > timeout_sec:
                     raise ProbeFailure(
                         f"smoke-load timed out after {timeout_sec}s "
-                        f"(expected {num_graphs} graph(s), got {initialized_count})",
+                        f"(mediapipe {mediapipe_count}/{expected_mediapipe}, "
+                        f"plain {plain_count}/{expected_plain})",
                         list(recent_lines),
                     )
 
@@ -199,25 +218,40 @@ def _probe_ovms(
                     fail_lines.append(line)
                     logger.warning("[smoke-load] fail marker: %s", line)
 
-                # Check success marker.
-                if not fail_lines and "MediapipeGraphDefinition initializing graph nodes" in line:
-                    initialized_count += 1
-                    logger.debug("[smoke-load] graph %d/%d initialized", initialized_count, num_graphs)
+                # Check success markers, both chosen to fire EARLY (config
+                # accepted, load begun) -- smoke must not wait for the full model
+                # to compile into memory. Mediapipe (LLM) graphs log a graph-init
+                # line; plain models transition to "LOADING" with error_code OK
+                # (verified against a real plain pp-doclayout-m load: LOADING
+                # precedes the heavy compile that ends in AVAILABLE). Parse /
+                # precondition failures surface as fail-markers before this point.
+                if not fail_lines:
+                    if "MediapipeGraphDefinition initializing graph nodes" in line:
+                        mediapipe_count += 1
+                    elif '"state": "LOADING"' in line and '"error_code": "OK"' in line:
+                        plain_count += 1
 
-                # Stop if we hit fail or success.
-                if fail_lines or initialized_count >= num_graphs:
+                # Stop if we hit fail or both expectations are met.
+                if fail_lines or (
+                    mediapipe_count >= expected_mediapipe
+                    and plain_count >= expected_plain
+                ):
                     break
 
         if fail_lines:
             return fail_lines, list(recent_lines)
 
-        if initialized_count < num_graphs:
+        if mediapipe_count < expected_mediapipe or plain_count < expected_plain:
             raise ProbeFailure(
-                f"expected {num_graphs} graph(s), saw {initialized_count} initializing",
+                f"expected mediapipe {expected_mediapipe}, plain {expected_plain}; "
+                f"saw mediapipe {mediapipe_count}, plain {plain_count}",
                 list(recent_lines),
             )
 
-        logger.info("[smoke-load] validation passed: all %d graph(s) initialized", num_graphs)
+        logger.info(
+            "[smoke-load] validation passed: mediapipe %d, plain %d",
+            mediapipe_count, expected_plain,
+        )
         return [], list(recent_lines)
 
     finally:

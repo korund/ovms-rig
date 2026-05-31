@@ -24,8 +24,8 @@ repository:
 models:
   ep:
     source: main
+    device: GPU
     graph:
-      device: GPU
       draft_model: draft
       draft_device: CPU
 """
@@ -41,6 +41,45 @@ def test_load_ovms_happy_path(tmp_path: Path) -> None:
     assert cfg.runtime.rest_port == 8000
     assert set(cfg.repository) == {"main", "draft"}
     assert cfg.models["ep"].graph.draft_model == "draft"
+
+
+PLAIN_OVMS = """
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  doclayout:
+    hf: pp-doclayout-m
+
+models:
+  layout:
+    source: doclayout
+    device: NPU
+
+profiles:
+  default:
+    models: [layout]
+    active: true
+"""
+
+
+def test_load_ovms_plain_model_no_task_no_graph(tmp_path: Path) -> None:
+    cfg = load_ovms(_write(tmp_path / "ovms.yaml", PLAIN_OVMS))
+    assert cfg.repository["doclayout"].task is None
+    entry = cfg.models["layout"]
+    assert entry.graph is None
+    assert entry.device == "NPU"
+    assert entry.draft_model is None
+
+
+def test_load_ovms_plain_model_with_graph_rejected(tmp_path: Path) -> None:
+    bad = PLAIN_OVMS.replace(
+        "    device: NPU\n",
+        "    device: NPU\n    graph:\n      max_num_seqs: 8\n",
+    )
+    with pytest.raises(ConfigError, match="graph fields apply only to"):
+        load_ovms(_write(tmp_path / "ovms.yaml", bad))
 
 
 def test_load_ovms_dangling_model_reference(tmp_path: Path) -> None:
@@ -182,12 +221,12 @@ repository:
 models:
   ep1:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   ep2:
     source: main
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 """
     # Error message references OVMS limitation and the conflicting entries.
     with pytest.raises(ConfigError, match="one source can be target|ep1|ep2|OVMS limitation"):

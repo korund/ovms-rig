@@ -20,8 +20,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 """
 
 OVMS_YAML_WITH_PROFILES = """
@@ -39,12 +39,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   other:
     source: main2
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:

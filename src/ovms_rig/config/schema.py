@@ -15,8 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 LogLevel = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
 KvCachePrecision = Literal["u8", "f16"]
 Device = Literal["CPU", "GPU", "NPU"]
-# Task taxonomy as accepted by `ovms --pull --task`. Required per model
-# since pull cannot infer it from the HF repo.
+# Task taxonomy as accepted by `ovms --pull --task`. Set per model when the
+# model is generative (pull cannot infer it from the HF repo). Left unset for
+# plain models (e.g. detection/classification ONNX or OpenVINO IR) which OVMS
+# serves via model_config_list without a mediapipe graph and which are not
+# pulled by `ovms --pull` at all -- their files are placed in the store directly.
 Task = Literal[
     "text_generation",
     "embeddings",
@@ -40,7 +43,8 @@ class Runtime(_Strict):
 
 class ModelIdentity(_Strict):
     hf: str
-    task: Task
+    # None -> plain model (model_config_list, no graph, not pulled).
+    task: Task | None = None
     revision: str | None = None
 
 
@@ -56,17 +60,11 @@ class Graph(_Strict):
     dynamic_split_fuse: bool | None = None
     kv_cache_precision: KvCachePrecision | None = None
 
-    device: Device  # required; ovms cannot start without a target device
     draft_device: Device | None = None
     # Reference into ovms.yaml `repository:` keys. Resolved to a filesystem path
     # (draft_models_path in pbtxt) during apply, relative to the target's
     # graph.pbtxt directory.
     draft_model: str | None = None
-    # OpenVINO device properties forwarded to the LLM pipeline via
-    # LLMCalculatorOptions.plugin_config (serialized as JSON in graph.pbtxt).
-    # Generic key/value bag -- we do not validate individual keys (CACHE_DIR,
-    # PERFORMANCE_HINT, NUM_STREAMS, ...) since the set is plugin-defined.
-    plugin_config: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def _draft_fields_are_paired(self) -> Graph:
@@ -87,11 +85,28 @@ class Graph(_Strict):
 
 class ModelEntry(_Strict):
     source: str
-    graph: Graph
+    # Deployment knobs shared by every model type (mediapipe LLM graph and
+    # plain model_config_list alike): the target device and OpenVINO device
+    # properties. They live on the entry, not in `graph`, because OVMS applies
+    # them regardless of how the model is registered.
+    device: Device  # required; ovms cannot start without a target device
+    # OpenVINO device properties forwarded to the device plugin. For the LLM
+    # pipeline they are serialized into graph.pbtxt LLMCalculatorOptions.
+    # Generic key/value bag -- we do not validate individual keys (CACHE_DIR,
+    # PERFORMANCE_HINT, NUM_STREAMS, ...) since the set is plugin-defined.
+    plugin_config: dict[str, str] | None = None
+    # LLM/mediapipe pipeline tuning written into graph.pbtxt. Present only for
+    # task-based (generative) models; absent for plain model_config_list models.
+    graph: Graph | None = None
     # Overrides merged into the model's generation_config.json at apply time.
     # Lives on the model entry (not the model identity) because it is a deployment-level
-    # override, like graph.device. Passthrough dict; values are not validated.
+    # override, like device. Passthrough dict; values are not validated.
     generation: dict[str, int | float | bool | str | list[Any]] | None = None
+
+    @property
+    def draft_model(self) -> str | None:
+        """Draft model reference, or None when no graph / no speculative decoding."""
+        return self.graph.draft_model if self.graph is not None else None
 
 
 class Profile(_Strict):

@@ -184,13 +184,15 @@ def patch_file(path: Path, fields: dict[str, object]) -> str:
 
 
 def collect_pbtxt_fields(
-    entry_graph,  # config.schema.Graph instance
+    entry,  # config.schema.ModelEntry instance
     draft_models_path: str | None,
     cache_dir: Path | None = None,
 ) -> dict[str, object]:
     """Build the dict of fields to patch into LLMCalculatorOptions.
 
     Covers device, draft_device, draft_models_path, and plugin_config.
+    `device` and `plugin_config` are read from the entry (shared deployment
+    knobs); the remaining fields come from `entry.graph` (LLM-only).
 
     cache_dir bridge: ovms 2026.1 LLM continuous-batching pipeline does not
     forward the global `--cache_dir` flag to the device plugin (the LLM
@@ -199,28 +201,30 @@ def collect_pbtxt_fields(
     propagate. If the user has already set plugin_config.CACHE_DIR explicitly,
     their value wins.
     """
+    entry_graph = entry.graph
     fields: dict[str, object] = {}
-    if entry_graph.device is not None:
-        fields["device"] = entry_graph.device
-    if entry_graph.draft_device is not None:
+    if entry.device is not None:
+        fields["device"] = entry.device
+    if entry_graph is not None and entry_graph.draft_device is not None:
         fields["draft_device"] = entry_graph.draft_device
     if draft_models_path is not None:
         fields["draft_models_path"] = draft_models_path
     # Declared LLMCalculatorOptions fields. `ovms --pull` produces a template
     # pbtxt with its own defaults; activation overrides any field the user
     # declared in `graph:`. Unset (None) means "leave ovms default in place".
-    for name in (
-        "max_num_seqs",
-        "enable_prefix_caching",
-        "cache_size",
-        "dynamic_split_fuse",
-        "kv_cache_precision",
-    ):
-        value = getattr(entry_graph, name)
-        if value is not None:
-            fields[name] = value
+    if entry_graph is not None:
+        for name in (
+            "max_num_seqs",
+            "enable_prefix_caching",
+            "cache_size",
+            "dynamic_split_fuse",
+            "kv_cache_precision",
+        ):
+            value = getattr(entry_graph, name)
+            if value is not None:
+                fields[name] = value
 
-    plugin_config: dict[str, object] = dict(entry_graph.plugin_config or {})
+    plugin_config: dict[str, object] = dict(entry.plugin_config or {})
     if cache_dir is not None and "CACHE_DIR" not in plugin_config:
         plugin_config["CACHE_DIR"] = cache_dir
     if plugin_config:

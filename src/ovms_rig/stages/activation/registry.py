@@ -5,12 +5,15 @@ Any pre-existing content (model_config_list left over from another tool,
 stray mediapipe entries, unknown keys) is discarded. Declarative contract:
 what is declared in ovms.yaml, is what runs.
 
-Entry structure:
-  {
-    "name": "<model_name>",
-    "base_path": "<absolute_path_to_model_directory>",
-    "graph_path": "graph.<model_name>.pbtxt"  (relative from base_path)
-  }
+Two entry kinds, by model type:
+  mediapipe (task-based LLM):
+    {"name": "<model_name>",
+     "base_path": "<abs model dir>",
+     "graph_path": "graph.<model_name>.pbtxt"}
+  plain (model_config_list):
+    {"config": {"name": "<model_name>",
+                "base_path": "<abs model dir>",
+                "target_device": "<device>"}}
 """
 
 from __future__ import annotations
@@ -22,31 +25,48 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def render_mediapipe_entries(
+def render_config(
     config_path: Path,
-    desired_entries: dict[str, tuple[Path, str]],
+    mediapipe_entries: dict[str, tuple[Path, str]],
+    model_entries: dict[str, tuple[Path, str, dict[str, str] | None]],
 ) -> None:
-    """Rewrite config.json as exact projection of desired_entries.
+    """Rewrite config.json as exact projection of the desired entries.
 
-    desired_entries: dict mapping model_name -> (base_path, graph_path).
-    If desired_entries is empty, mediapipe_config_list becomes [].
+    mediapipe_entries: model_name -> (base_path, graph_path).
+    model_entries:     model_name -> (base_path, target_device, plugin_config).
+                       plugin_config (OpenVINO device properties) is emitted only
+                       when non-empty; for LLM models it travels via graph.pbtxt.
+    Empty dicts render empty lists.
 
     Raises OSError if file I/O fails.
     """
-    rendered = [
+    mediapipe_rendered = [
         {
             "name": model_name,
             "base_path": str(base_path),
             "graph_path": graph_path,
         }
-        for model_name, (base_path, graph_path) in desired_entries.items()
+        for model_name, (base_path, graph_path) in mediapipe_entries.items()
     ]
+    model_rendered = []
+    for model_name, (base_path, target_device, plugin_config) in model_entries.items():
+        config: dict[str, object] = {
+            "name": model_name,
+            "base_path": str(base_path),
+            "target_device": target_device,
+        }
+        if plugin_config:
+            config["plugin_config"] = dict(plugin_config)
+        model_rendered.append({"config": config})
 
     data = {
-        "model_config_list": [],
-        "mediapipe_config_list": rendered,
+        "model_config_list": model_rendered,
+        "mediapipe_config_list": mediapipe_rendered,
     }
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    logger.debug("[registry] rendered config.json: desired=%s", list(desired_entries.keys()))
+    logger.debug(
+        "[registry] rendered config.json: mediapipe=%s model=%s",
+        list(mediapipe_entries.keys()), list(model_entries.keys()),
+    )

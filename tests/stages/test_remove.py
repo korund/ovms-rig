@@ -29,14 +29,14 @@ repository:
 models:
   prod-main:
     source: qwen3-14b
+    device: GPU
     graph:
-      device: GPU
       draft_model: null
       draft_device: null
   prod-draft:
     source: qwen3-draft
+    device: CPU
     graph:
-      device: CPU
       draft_model: null
       draft_device: null
 profiles:

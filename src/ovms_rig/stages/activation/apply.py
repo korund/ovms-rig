@@ -31,7 +31,7 @@ from ovms_rig.probes import ovms_binary
 from ovms_rig.stages.activation.generation import merge as merge_generation
 from ovms_rig.stages.activation.paths import model_dir, relative_posix
 from ovms_rig.stages.activation.pbtxt import collect_pbtxt_fields, patch
-from ovms_rig.stages.activation.registry import render_mediapipe_entries
+from ovms_rig.stages.activation.registry import render_config
 from ovms_rig.stages.activation import cleanup
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,15 @@ def run(ctx: dict) -> int:
                 _rollback(config_json_path, config_json_snapshot, existing_graphs)
             return 1
 
+        # Plain (non-task) models register via model_config_list: no graph.pbtxt,
+        # no sibling graph, no generation_config. Presence of the directory above
+        # is the only per-model artifact; rendering happens below.
+        if model_identity.task is None:
+            logger.info("[apply] %s: plain model (model_config_list), device=%s",
+                        model_name, entry.device)
+            processed_models.append(model_name)
+            continue
+
         pristine_pbtxt = target_dir / "graph.pbtxt"
         if not pristine_pbtxt.exists():
             logger.error(
@@ -138,13 +147,13 @@ def run(ctx: dict) -> int:
 
         # Resolve draft path if declared.
         draft_rel: str | None = None
-        if entry.graph.draft_model is not None:
-            draft_identity = ovms.repository[entry.graph.draft_model]
+        if entry.draft_model is not None:
+            draft_identity = ovms.repository[entry.draft_model]
             draft_dir = model_dir(store, draft_identity.hf)
             draft_rel = relative_posix(target_dir, draft_dir)
 
         fields = collect_pbtxt_fields(
-            entry.graph, draft_rel, cache_dir=local.runtime.cache_dir,
+            entry, draft_rel, cache_dir=local.runtime.cache_dir,
         )
 
         # Compute destination path for sibling-copy (live or build/).
@@ -244,15 +253,19 @@ def run(ctx: dict) -> int:
     if not dry_run:
         config_json_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build desired entries dict from active_models (not processed_models).
+    # Build desired entries from active_models (not processed_models).
     # If a model failed, it won't reach here due to fail-fast above.
-    # But if we reach here, all active_models should be rendered in config.json.
-    desired_entries: dict[str, tuple[Path, str]] = {}
+    # Mediapipe (LLM) vs plain (model_config_list) is decided by the source task.
+    mediapipe_entries: dict[str, tuple[Path, str]] = {}
+    model_entries: dict[str, tuple[Path, str, dict[str, str] | None]] = {}
     for model_name in active_models:
         entry = ovms.models[model_name]
         model_identity = ovms.repository[entry.source]
-        target_dir = model_dir(store, model_identity.hf)
-        desired_entries[model_name] = (target_dir.resolve(), f"graph.{model_name}.pbtxt")
+        target_dir = model_dir(store, model_identity.hf).resolve()
+        if model_identity.task is None:
+            model_entries[model_name] = (target_dir, entry.device, entry.plugin_config)
+        else:
+            mediapipe_entries[model_name] = (target_dir, f"graph.{model_name}.pbtxt")
 
     try:
         # dry_run renders to build/, live renders to store/.
@@ -261,8 +274,9 @@ def run(ctx: dict) -> int:
         else:
             config_json_path = store / "config.json"
         config_json_path.parent.mkdir(parents=True, exist_ok=True)
-        render_mediapipe_entries(config_json_path, desired_entries)
-        logger.info("[apply] config.json rendered with %d model(s)", len(desired_entries))
+        render_config(config_json_path, mediapipe_entries, model_entries)
+        logger.info("[apply] config.json rendered with %d model(s)",
+                    len(mediapipe_entries) + len(model_entries))
     except (OSError, ValueError) as exc:
         logger.error("[apply] failed to render config.json: %s", exc)
         # Fail-fast: rollback and exit.

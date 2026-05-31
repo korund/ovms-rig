@@ -27,8 +27,8 @@ repository:
 models:
   ep:
     source: main
+    device: GPU
     graph:
-      device: GPU
       draft_model: draft
       draft_device: CPU
 

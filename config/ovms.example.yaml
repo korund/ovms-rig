@@ -34,26 +34,27 @@ profiles:
 models:
   qwen3-spec:
     source: qwen3-14b
+    # Deployment knobs shared by every model type, set on the entry itself.
+    device: GPU
+    # OpenVINO device properties forwarded to the device plugin. ovms 2026.1
+    # does not propagate the global --cache_dir to the LLM continuous-batch
+    # pipeline, so CACHE_DIR must travel via plugin_config. The loader
+    # injects local.runtime.cache_dir here automatically unless you set
+    # CACHE_DIR explicitly below. Forward slashes are required.
+    plugin_config:
+      KV_CACHE_PRECISION: u8
+    #   CACHE_DIR: C:/ovms/cache
+    #   PERFORMANCE_HINT: LATENCY
     graph:
       # Fields written into LLMCalculatorOptions in graph.pbtxt.
       # The loader treats this section as a typed pass-through bag; it does not
       # know what speculative decoding means, only how to set fields.
-      device: GPU
       max_num_seqs: 256
       enable_prefix_caching: true
       cache_size: 0           # GB; 0 = dynamic
       dynamic_split_fuse: true
       # draft_model: qwen3-0.6b
       # draft_device: CPU
-      # OpenVINO device properties forwarded to the LLM pipeline. ovms 2026.1
-      # does not propagate the global --cache_dir to the LLM continuous-batch
-      # pipeline, so CACHE_DIR must travel via plugin_config. The loader
-      # injects local.runtime.cache_dir here automatically unless you set
-      # CACHE_DIR explicitly below. Forward slashes are required.
-      plugin_config:
-        KV_CACHE_PRECISION: u8
-      #   CACHE_DIR: C:/ovms/cache
-      #   PERFORMANCE_HINT: LATENCY
     # Overrides for generation_config.json (HuggingFace generation config).
     # Keys and values are passed through as-is; no schema validation.
     # generation:

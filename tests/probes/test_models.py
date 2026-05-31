@@ -19,8 +19,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 """
 
 OVMS_YAML_MULTIPLE_MODELS = """
@@ -38,12 +38,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   draft_ep:
     source: draft
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:
@@ -90,12 +90,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   orphan:
     source: main2
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:

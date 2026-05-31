@@ -175,22 +175,18 @@ class TestPatchPluginConfig:
 
 
 class _StubGraph:
-    """Minimal stand-in for config.schema.Graph used by bridge tests."""
+    """Minimal stand-in for config.schema.Graph (LLM-only fields)."""
 
     def __init__(
         self,
-        device="GPU",
         draft_device=None,
-        plugin_config=None,
         max_num_seqs=None,
         enable_prefix_caching=None,
         cache_size=None,
         dynamic_split_fuse=None,
         kv_cache_precision=None,
     ):
-        self.device = device
         self.draft_device = draft_device
-        self.plugin_config = plugin_config
         self.max_num_seqs = max_num_seqs
         self.enable_prefix_caching = enable_prefix_caching
         self.cache_size = cache_size
@@ -198,18 +194,48 @@ class _StubGraph:
         self.kv_cache_precision = kv_cache_precision
 
 
+class _StubEntry:
+    """Minimal stand-in for config.schema.ModelEntry used by bridge tests.
+
+    device and plugin_config are shared entry-level knobs; the remaining
+    LLMCalculatorOptions fields live on the nested graph.
+    """
+
+    def __init__(
+        self,
+        device="GPU",
+        plugin_config=None,
+        draft_device=None,
+        max_num_seqs=None,
+        enable_prefix_caching=None,
+        cache_size=None,
+        dynamic_split_fuse=None,
+        kv_cache_precision=None,
+    ):
+        self.device = device
+        self.plugin_config = plugin_config
+        self.graph = _StubGraph(
+            draft_device=draft_device,
+            max_num_seqs=max_num_seqs,
+            enable_prefix_caching=enable_prefix_caching,
+            cache_size=cache_size,
+            dynamic_split_fuse=dynamic_split_fuse,
+            kv_cache_precision=kv_cache_precision,
+        )
+
+
 class TestLLMCalculatorOptionsFields:
     """All declared LLMCalculatorOptions fields reach the patch dict."""
 
     def test_all_declared_fields_collected(self):
-        graph = _StubGraph(
+        entry = _StubEntry(
             max_num_seqs=128,
             enable_prefix_caching=True,
             cache_size=0,
             dynamic_split_fuse=True,
             kv_cache_precision="u8",
         )
-        fields = collect_pbtxt_fields(graph, draft_models_path=None, cache_dir=None)
+        fields = collect_pbtxt_fields(entry, draft_models_path=None, cache_dir=None)
         assert fields["max_num_seqs"] == 128
         assert fields["enable_prefix_caching"] is True
         assert fields["cache_size"] == 0
@@ -217,8 +243,8 @@ class TestLLMCalculatorOptionsFields:
         assert fields["kv_cache_precision"] == "u8"
 
     def test_unset_fields_skipped(self):
-        graph = _StubGraph(max_num_seqs=64)
-        fields = collect_pbtxt_fields(graph, draft_models_path=None, cache_dir=None)
+        entry = _StubEntry(max_num_seqs=64)
+        fields = collect_pbtxt_fields(entry, draft_models_path=None, cache_dir=None)
         assert fields["max_num_seqs"] == 64
         assert "enable_prefix_caching" not in fields
         assert "cache_size" not in fields
@@ -230,34 +256,34 @@ class TestCacheDirBridge:
     """local.runtime.cache_dir bridged into plugin_config.CACHE_DIR."""
 
     def test_cache_dir_injected_when_plugin_config_absent(self):
-        graph = _StubGraph(plugin_config=None)
+        entry = _StubEntry(plugin_config=None)
         fields = collect_pbtxt_fields(
-            graph, draft_models_path=None, cache_dir=Path("C:/ov/cache"),
+            entry, draft_models_path=None, cache_dir=Path("C:/ov/cache"),
         )
         assert "plugin_config" in fields
         assert '"CACHE_DIR":"C:/ov/cache"' in str(fields["plugin_config"])
 
     def test_cache_dir_injected_when_key_missing(self):
-        graph = _StubGraph(plugin_config={"PERFORMANCE_HINT": "LATENCY"})
+        entry = _StubEntry(plugin_config={"PERFORMANCE_HINT": "LATENCY"})
         fields = collect_pbtxt_fields(
-            graph, draft_models_path=None, cache_dir=Path("C:/ov/cache"),
+            entry, draft_models_path=None, cache_dir=Path("C:/ov/cache"),
         )
         rendered = str(fields["plugin_config"])
         assert '"CACHE_DIR":"C:/ov/cache"' in rendered
         assert '"PERFORMANCE_HINT":"LATENCY"' in rendered
 
     def test_explicit_cache_dir_wins(self):
-        graph = _StubGraph(plugin_config={"CACHE_DIR": "D:/user/choice"})
+        entry = _StubEntry(plugin_config={"CACHE_DIR": "D:/user/choice"})
         fields = collect_pbtxt_fields(
-            graph, draft_models_path=None, cache_dir=Path("C:/ignored"),
+            entry, draft_models_path=None, cache_dir=Path("C:/ignored"),
         )
         rendered = str(fields["plugin_config"])
         assert '"CACHE_DIR":"D:/user/choice"' in rendered
         assert "ignored" not in rendered
 
     def test_no_plugin_config_when_neither_set(self):
-        graph = _StubGraph(plugin_config=None)
+        entry = _StubEntry(plugin_config=None)
         fields = collect_pbtxt_fields(
-            graph, draft_models_path=None, cache_dir=None,
+            entry, draft_models_path=None, cache_dir=None,
         )
         assert "plugin_config" not in fields

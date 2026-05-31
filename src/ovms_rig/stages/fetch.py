@@ -62,6 +62,19 @@ def run(ctx: dict) -> int:
     model_identity = ovms.repository[repository_name]
     dest = store / model_identity.hf
 
+    # Plain (non-task) models are not pulled by `ovms --pull`; their files are
+    # placed in the store directly by the user. Fetch only verifies presence.
+    if model_identity.task is None:
+        if dest.exists():
+            logger.info("[skip] '%s' is a plain model, present at %s", repository_name, dest)
+            return 0
+        logger.error(
+            "[fetch] '%s' is a plain model (no task); `ovms --pull` cannot fetch it. "
+            "Place its files at %s manually, then re-run.",
+            repository_name, dest,
+        )
+        return 1
+
     # Idempotent: if already present, skip.
     if dest.is_dir():
         logger.info("[skip] '%s' already present at %s", repository_name, dest)

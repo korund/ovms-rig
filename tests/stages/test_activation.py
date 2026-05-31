@@ -39,8 +39,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   default:

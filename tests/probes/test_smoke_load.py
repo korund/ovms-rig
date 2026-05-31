@@ -42,7 +42,8 @@ def _decl(num_models: int = 0, active_profile: str | None = None) -> Declaration
         models={
             f"model{i}": ModelEntry(
                 source="main",
-                graph=Graph(device="GPU"),
+                device="GPU",
+                graph=Graph(),
                 generation=None,
             )
             for i in range(num_models)
@@ -107,7 +108,7 @@ def test_success_single_graph():
                             result = smoke_load.check(decl)
 
     assert result.status == "ok"
-    assert "graph(s) validated" in result.summary
+    assert "model(s) validated" in result.summary
 
 
 def test_success_multiple_graphs():
@@ -140,6 +141,58 @@ def test_success_multiple_graphs():
                             result = smoke_load.check(decl)
 
     assert result.status == "ok"
+
+
+def _plain_decl() -> Declaration:
+    """Declaration with a single plain (non-task) model."""
+    ovms = OvmsConfig(
+        runtime=Runtime(rest_port=8000),
+        repository={"doc": ModelIdentity(hf="plain/doc")},
+        models={"layout": ModelEntry(source="doc", device="CPU", graph=None, generation=None)},
+        profiles={"default": Profile(models=["layout"], active=True)},
+    )
+    local = LocalConfig(
+        runtime=LocalRuntime(ovms_path=None, cache_dir=None),
+        models=LocalModels(repository_path=Path("/store")),
+    )
+    return Declaration(ovms=ovms, local=local, cli_override=None)
+
+
+def test_ok_on_plain_model_loading():
+    """Plain model reaching LOADING/OK (early marker) -> status ok.
+
+    Smoke keys on LOADING, not AVAILABLE: it must not wait for the full model
+    to compile into memory. LOADING means config accepted and load begun.
+    """
+    decl = _plain_decl()
+    output_lines = [
+        "[2026-05-31 20:03:25] Loading config",
+        '[2026-05-31 20:03:25] STATUS CHANGE: Version 1 of model layout status change. '
+        'New status: ( "state": "LOADING", "error_code": "OK" )',
+    ]
+
+    mock_binary = MagicMock(spec=Path)
+    mock_binary.is_file.return_value = True
+
+    with mock_config_exists():
+        with patch("ovms_rig.probes.smoke_load.ovms_binary.resolve", return_value=(mock_binary, "test")):
+            with patch("ovms_rig.probes.smoke_load.build_env", return_value={}):
+                with patch("tempfile.NamedTemporaryFile") as mock_tempfile:
+                    temp_file = MagicMock()
+                    temp_file.name = "/tmp/test.log"
+                    mock_tempfile.return_value = temp_file
+
+                    with patch("builtins.open", mock_open(read_data="\n".join(output_lines) + "\n")):
+                        with patch("subprocess.Popen") as mock_popen_cls:
+                            mock_proc = MagicMock()
+                            mock_proc.pid = 12345
+                            mock_proc.poll.side_effect = [None, None, 0]
+                            mock_popen_cls.return_value = mock_proc
+
+                            result = smoke_load.check(decl)
+
+    assert result.status == "ok"
+    assert "model(s) validated" in result.summary
 
 
 def test_fail_on_libprotobuf_error():

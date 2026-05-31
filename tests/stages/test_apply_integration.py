@@ -42,8 +42,8 @@ repository:
 models:
   ep:
     source: main
+    device: GPU
     graph:
-      device: GPU
       draft_model: draft
       draft_device: CPU
 
@@ -207,8 +207,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.5
 
@@ -326,8 +326,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.5
       top_p: 0.95
@@ -399,8 +399,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.5
 
@@ -458,8 +458,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   default:
@@ -524,8 +524,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation: {}
 
 profiles:
@@ -591,8 +591,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.7
 
@@ -736,8 +736,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.5
 
@@ -808,8 +808,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
     generation:
       temperature: 0.5
 
@@ -879,8 +879,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   default:
@@ -918,3 +918,72 @@ profiles:
     # Live generation_config.json should be unchanged (no overrides, so not restored).
     live_genconfig = model_dir / "generation_config.json"
     assert live_genconfig.read_text(encoding="utf-8") == original_content
+
+
+class TestPlainModel:
+    """Plain (non-task) models register via model_config_list, no graph.pbtxt."""
+
+    def test_activate_plain_model(self, tmp_path: Path,
+                                  monkeypatch: pytest.MonkeyPatch):
+        cfg = tmp_path / "ovms.yaml"
+        loc = tmp_path / "local.yaml"
+        store = tmp_path / "store"
+        store.mkdir()
+
+        # Plain model: directory present, no graph.pbtxt / generation_config.
+        model_dir = store / "pp-doclayout-m"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.onnx").write_text("stub", encoding="utf-8")
+
+        ovms_yaml = """\
+runtime:
+  rest_port: 8000
+  log_level: INFO
+
+repository:
+  pp-doclayout-m:
+    hf: pp-doclayout-m
+
+models:
+  doclayout:
+    source: pp-doclayout-m
+    device: NPU
+
+profiles:
+  layout:
+    models: [doclayout]
+    active: true
+"""
+        cfg.write_text(ovms_yaml, encoding="utf-8")
+        loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+
+        def ok_smoke_check(decl):
+            return CheckResult(name="smoke-load", status="ok", summary="ok")
+
+        with patch("ovms_rig.probes.smoke_load.check", side_effect=ok_smoke_check):
+            result = runner.invoke(
+                main,
+                ["--config", str(cfg), "--local", str(loc),
+                 "--ovms-path", sys.executable, "activate", "layout"],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+
+        # No sibling graph created for a plain model.
+        assert not list(model_dir.glob("graph.*.pbtxt"))
+
+        # config.json registers it in model_config_list, not mediapipe.
+        data = json.loads((store / "config.json").read_text(encoding="utf-8"))
+        assert data["mediapipe_config_list"] == []
+        assert data["model_config_list"] == [
+            {
+                "config": {
+                    "name": "doclayout",
+                    "base_path": str(model_dir.resolve()),
+                    "target_device": "NPU",
+                }
+            },
+        ]

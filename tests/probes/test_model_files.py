@@ -24,12 +24,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   draft_model:
     source: draft
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 """
 
 OVMS_YAML_WITH_SPECULATIVE = """
@@ -47,8 +47,8 @@ repository:
 models:
   ep:
     source: main
+    device: GPU
     graph:
-      device: GPU
       draft_model: draft
       draft_device: CPU
 
@@ -70,8 +70,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 """
 
 OVMS_YAML_MULTIPLE_PROFILES = """
@@ -89,12 +89,12 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
   draft_model:
     source: draft
-    graph:
-      device: CPU
+    device: CPU
+    graph: {}
 
 profiles:
   default:

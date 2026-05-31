@@ -79,7 +79,15 @@ def _check_references(cfg: OvmsConfig, source: Path) -> None:
                 "(OVMS limitation: generation_config.json is not overridable per entry)"
             )
         targets[entry.source] = name
-        draft = entry.graph.draft_model
+        # graph (mediapipe LLM tuning) only applies to task-based models. A
+        # plain source with a graph block is a declaration mistake.
+        if cfg.repository[entry.source].task is None and entry.graph is not None:
+            raise ConfigError(
+                f"{source}: model '{name}' declares a graph block but its source "
+                f"'{entry.source}' has no task; graph fields apply only to "
+                "task-based (generative) models"
+            )
+        draft = entry.draft_model
         if draft is not None and draft not in known:
             raise ConfigError(
                 f"{source}: model '{name}' references unknown "

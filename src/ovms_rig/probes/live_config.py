@@ -1,7 +1,8 @@
-"""Check live OVMS config (mediapipe_config_list in config.json) vs active profile.
+"""Check live OVMS config (config.json) vs active profile.
 
-Compares mediapipe_config_list in live config.json with the set of models
-that should be active based on the active profile.
+Compares the models registered in live config.json -- across both
+mediapipe_config_list (LLM) and model_config_list (plain) -- with the set of
+models that should be active based on the active profile.
 """
 
 from __future__ import annotations
@@ -55,9 +56,17 @@ def check(decl: Declaration) -> CheckResult:
             summary=f"failed to read config.json: {e}",
         )
 
+    # Live models come from both lists: mediapipe_config_list (LLM, name at top
+    # level) and model_config_list (plain, name nested under "config").
     live_models: set[str] = set()
-    if "mediapipe_config_list" in data:
-        live_models = {entry["name"] for entry in data["mediapipe_config_list"]}
+    for entry in data.get("mediapipe_config_list", []):
+        name = entry.get("name")
+        if name:
+            live_models.add(name)
+    for entry in data.get("model_config_list", []):
+        name = entry.get("config", {}).get("name")
+        if name:
+            live_models.add(name)
 
     # Compare expected vs actual.
     if active_models == live_models:

@@ -20,8 +20,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   default:
@@ -41,8 +41,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   default:
@@ -213,8 +213,8 @@ repository:
 models:
   ep:
     source: main
-    graph:
-      device: GPU
+    device: GPU
+    graph: {}
 
 profiles:
   empty_profile:
@@ -239,3 +239,51 @@ profiles:
     assert result.details["active_profile"] == "empty_profile"
     assert set(result.details["expected_models"]) == set()
     assert set(result.details["live_models"]) == set()
+
+
+PLAIN_YAML = """
+runtime:
+  rest_port: 8000
+
+repository:
+  doclayout:
+    hf: pp-doclayout-m
+
+models:
+  layout:
+    source: doclayout
+    device: NPU
+
+profiles:
+  default:
+    models: [layout]
+    active: true
+"""
+
+
+def test_live_config_recognizes_plain_model_in_model_config_list(tmp_path):
+    """A plain model lives in model_config_list; the probe must see it there."""
+    cfg = tmp_path / "ovms.yaml"
+    loc = tmp_path / "local.yaml"
+    store = tmp_path / "store"
+    store.mkdir()
+
+    cfg.write_text(PLAIN_YAML, encoding="utf-8")
+    loc.write_text(LOCAL_YAML.format(store=store.as_posix()), encoding="utf-8")
+
+    ovms = load_ovms(cfg)
+    local = load_local(loc)
+    decl = Declaration(ovms=ovms, local=local)
+
+    config_json = store / "config.json"
+    config_data = {
+        "model_config_list": [
+            {"config": {"name": "layout", "base_path": "/x", "target_device": "NPU"}}
+        ],
+        "mediapipe_config_list": [],
+    }
+    config_json.write_text(json.dumps(config_data), encoding="utf-8")
+
+    result = live_config.check(decl)
+    assert result.status == "ok"
+    assert set(result.details["live_models"]) == {"layout"}
