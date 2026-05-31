@@ -63,3 +63,27 @@ def test_entry_plugin_config_accepts_string_dict() -> None:
         graph=Graph(),
     )
     assert e.plugin_config == {"CACHE_DIR": "C:/cache", "PERFORMANCE_HINT": "LATENCY"}
+
+
+def test_entry_plain_defaults_to_none() -> None:
+    e = ModelEntry(source="qwen", device="GPU", graph=Graph())
+    assert e.plain is None
+
+
+def test_entry_plain_accepts_object_dict() -> None:
+    e = ModelEntry(
+        source="mobilenet",
+        device="CPU",
+        plain={"batch_size": 4, "nireq": 8, "model_version_policy": "latest"},
+    )
+    assert e.plain == {"batch_size": 4, "nireq": 8, "model_version_policy": "latest"}
+
+
+def test_entry_plain_rejects_both_graph_and_plain() -> None:
+    with pytest.raises(ValidationError, match="plain and graph are mutually exclusive"):
+        ModelEntry(
+            source="model",
+            device="GPU",
+            graph=Graph(),
+            plain={"batch_size": 4},
+        )

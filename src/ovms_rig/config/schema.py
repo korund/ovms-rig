@@ -98,10 +98,27 @@ class ModelEntry(_Strict):
     # LLM/mediapipe pipeline tuning written into graph.pbtxt. Present only for
     # task-based (generative) models; absent for plain model_config_list models.
     graph: Graph | None = None
+    # Plain model config options forwarded to model_config_list[].config. Present only
+    # for plain (non-task) models. Generic key/value bag for OVMS model_config_list options
+    # (batch_size, nireq, model_version_policy, etc.) -- we do not validate individual keys
+    # since OVMS validates at load time.
+    plain: dict[str, object] | None = None
     # Overrides merged into the model's generation_config.json at apply time.
     # Lives on the model entry (not the model identity) because it is a deployment-level
     # override, like device. Passthrough dict; values are not validated.
     generation: dict[str, int | float | bool | str | list[Any]] | None = None
+
+    @model_validator(mode="after")
+    def _plain_and_graph_are_exclusive(self) -> ModelEntry:
+        # plain (model_config_list options) and graph (LLM pipeline tuning) are for
+        # different model types and cannot coexist. Validation also happens in loader.py
+        # but we enforce it here for schema consistency.
+        if self.plain is not None and self.graph is not None:
+            raise ValueError(
+                "plain and graph are mutually exclusive "
+                "(plain is for non-task models, graph is for task-based models)"
+            )
+        return self
 
     @property
     def draft_model(self) -> str | None:

@@ -82,6 +82,24 @@ def test_load_ovms_plain_model_with_graph_rejected(tmp_path: Path) -> None:
         load_ovms(_write(tmp_path / "ovms.yaml", bad))
 
 
+def test_load_ovms_plain_model_with_plain_block_accepted(tmp_path: Path) -> None:
+    good = PLAIN_OVMS.replace(
+        "    device: NPU\n",
+        "    device: NPU\n    plain:\n      batch_size: 4\n",
+    )
+    cfg = load_ovms(_write(tmp_path / "ovms.yaml", good))
+    assert cfg.models["layout"].plain == {"batch_size": 4}
+
+
+def test_load_ovms_task_model_with_plain_rejected(tmp_path: Path) -> None:
+    bad = VALID_OVMS.replace(
+        "    device: GPU\n    graph:\n      draft_model: draft\n      draft_device: CPU\n",
+        "    device: GPU\n    plain:\n      batch_size: 4\n",
+    )
+    with pytest.raises(ConfigError, match="plain options apply only to"):
+        load_ovms(_write(tmp_path / "ovms.yaml", bad))
+
+
 def test_load_ovms_dangling_model_reference(tmp_path: Path) -> None:
     bad = VALID_OVMS.replace("source: main", "source: ghost")
     with pytest.raises(ConfigError, match="unknown source 'ghost'"):

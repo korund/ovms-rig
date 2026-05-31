@@ -87,6 +87,14 @@ def _check_references(cfg: OvmsConfig, source: Path) -> None:
                 f"'{entry.source}' has no task; graph fields apply only to "
                 "task-based (generative) models"
             )
+        # plain (model_config_list options) only applies to non-task models.
+        # task-based sources should not declare plain.
+        if cfg.repository[entry.source].task is not None and entry.plain is not None:
+            raise ConfigError(
+                f"{source}: model '{name}' declares a plain block but its source "
+                f"'{entry.source}' has a task; plain options apply only to "
+                "non-task (plain) models"
+            )
         draft = entry.draft_model
         if draft is not None and draft not in known:
             raise ConfigError(

@@ -257,13 +257,13 @@ def run(ctx: dict) -> int:
     # If a model failed, it won't reach here due to fail-fast above.
     # Mediapipe (LLM) vs plain (model_config_list) is decided by the source task.
     mediapipe_entries: dict[str, tuple[Path, str]] = {}
-    model_entries: dict[str, tuple[Path, str, dict[str, str] | None]] = {}
+    model_entries: dict[str, tuple[Path, str, dict[str, str] | None, dict[str, object] | None]] = {}
     for model_name in active_models:
         entry = ovms.models[model_name]
         model_identity = ovms.repository[entry.source]
         target_dir = model_dir(store, model_identity.hf).resolve()
         if model_identity.task is None:
-            model_entries[model_name] = (target_dir, entry.device, entry.plugin_config)
+            model_entries[model_name] = (target_dir, entry.device, entry.plugin_config, entry.plain)
         else:
             mediapipe_entries[model_name] = (target_dir, f"graph.{model_name}.pbtxt")
 

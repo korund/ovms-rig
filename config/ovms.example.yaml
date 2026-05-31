@@ -21,6 +21,12 @@ repository:
   qwen3-0.6b:
     hf: OpenVINO/Qwen3-0.6B-int8-ov
     task: text_generation
+  # Plain (non-task) models: detection, classification, or other ONNX/OpenVINO IR models.
+  # These are registered via model_config_list, not mediapipe graphs.
+  # No task field; rig does not fetch them (user places files in store manually).
+  # mobilenet-v2:
+  #   hf: some/mobilenet-v2
+  #   # task is omitted/None -> plain model
 
 # Profiles group model endpoints into sets that can be brought up together.
 # At most one profile may have `active: true`; that profile's models end up in
@@ -61,3 +67,12 @@ models:
     #   temperature: 0.5
     #   top_p: 0.95
     #   num_speculative_tokens: 7
+
+  # Plain (non-task) model example: detection/classification/etc. registered via model_config_list.
+  # mobilenet:
+  #   source: mobilenet-v2
+  #   device: CPU
+  #   # plain: model_config_list options (batch_size, nireq, model_version_policy, etc.)
+  #   plain:
+  #     batch_size: 4
+  #     nireq: 8

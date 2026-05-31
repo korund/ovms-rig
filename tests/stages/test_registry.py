@@ -47,7 +47,7 @@ def test_render_plain_model_entry(tmp_path: Path) -> None:
     """Plain models land in model_config_list with target_device."""
     config_path = tmp_path / "config.json"
     render_config(config_path, {}, {
-        "doclayout": (tmp_path / "pp-doclayout", "NPU", None),
+        "doclayout": (tmp_path / "pp-doclayout", "NPU", None, None),
     })
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
@@ -67,11 +67,56 @@ def test_render_plain_model_with_plugin_config(tmp_path: Path) -> None:
     """plugin_config is emitted into the plain config object when present."""
     config_path = tmp_path / "config.json"
     render_config(config_path, {}, {
-        "doclayout": (tmp_path / "d", "NPU", {"PERFORMANCE_HINT": "LATENCY"}),
+        "doclayout": (tmp_path / "d", "NPU", {"PERFORMANCE_HINT": "LATENCY"}, None),
     })
 
     cfg = json.loads(config_path.read_text(encoding="utf-8"))["model_config_list"][0]["config"]
     assert cfg["plugin_config"] == {"PERFORMANCE_HINT": "LATENCY"}
+
+
+def test_render_plain_model_with_plain_options(tmp_path: Path) -> None:
+    """plain dict is merged verbatim into the config object."""
+    config_path = tmp_path / "config.json"
+    render_config(config_path, {}, {
+        "doclayout": (tmp_path / "d", "NPU", None, {"batch_size": 4, "nireq": 8}),
+    })
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))["model_config_list"][0]["config"]
+    assert cfg["batch_size"] == 4
+    assert cfg["nireq"] == 8
+
+
+def test_render_plain_model_with_both_plugin_and_plain(tmp_path: Path) -> None:
+    """plugin_config and plain options both present in config."""
+    config_path = tmp_path / "config.json"
+    render_config(config_path, {}, {
+        "doclayout": (tmp_path / "d", "NPU", {"CACHE_DIR": "/cache"}, {"batch_size": 2}),
+    })
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))["model_config_list"][0]["config"]
+    assert cfg["plugin_config"] == {"CACHE_DIR": "/cache"}
+    assert cfg["batch_size"] == 2
+
+
+def test_render_plain_model_rig_owned_keys_override_plain(tmp_path: Path) -> None:
+    """Rig-owned keys (name, base_path, target_device) always win over plain.
+
+    If a user passes a plain dict with a colliding rig-owned key, the rig's
+    computed value is preserved. The plain dict is still merged for other
+    fields (e.g. batch_size), enforcing the precedence rule without validation.
+    """
+    config_path = tmp_path / "config.json"
+    computed_path = tmp_path / "computed"
+    render_config(config_path, {}, {
+        "model_a": (computed_path, "GPU", None,
+                    {"base_path": "HACK", "batch_size": 4}),
+    })
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))["model_config_list"][0]["config"]
+    assert cfg["name"] == "model_a"
+    assert cfg["base_path"] == str(computed_path)
+    assert cfg["target_device"] == "GPU"
+    assert cfg["batch_size"] == 4
 
 
 def test_render_mixed_lists(tmp_path: Path) -> None:
@@ -80,7 +125,7 @@ def test_render_mixed_lists(tmp_path: Path) -> None:
     render_config(
         config_path,
         {"qwen": (tmp_path / "qwen", "graph.qwen.pbtxt")},
-        {"doclayout": (tmp_path / "doclayout", "NPU", None)},
+        {"doclayout": (tmp_path / "doclayout", "NPU", None, None)},
     )
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
