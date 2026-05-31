@@ -5,7 +5,7 @@ import logging
 import pytest
 
 from ovms_rig.probes.registry import Probe
-from ovms_rig.probes.report import Report
+from ovms_rig.probes.aggregator import Report
 from ovms_rig.report import CheckResult
 
 

@@ -11,7 +11,7 @@ from ovms_rig.probes import live_config, model_files, models, ovms_binary, port,
 from ovms_rig.report import CheckResult
 
 if TYPE_CHECKING:
-    from ovms_rig.probes.report import Report
+    from ovms_rig.probes.aggregator import Report
 
 ProbeFn = Callable[[Declaration], CheckResult]
 
@@ -62,7 +62,7 @@ PRESETS: dict[Preset, tuple[str, ...]] = {
 
 
 def run(ctx: dict, preset: Preset) -> "Report":
-    from ovms_rig.probes.report import Report
+    from ovms_rig.probes.aggregator import Report
 
     # Load declaration once per run
     config_path = Path(ctx["config_path"])
