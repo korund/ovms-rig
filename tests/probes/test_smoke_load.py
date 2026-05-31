@@ -200,7 +200,7 @@ def test_fail_on_libprotobuf_error():
     decl = _decl(num_models=1, active_profile="default")
     output_lines = [
         "[2026-05-25 10:00:00] Loading config",
-        '[libprotobuf ERROR] Error parsing "kv_cache_precision"',
+        '[libprotobuf ERROR] Error parsing "some_unknown_field"',
     ]
 
     mock_binary = MagicMock(spec=Path)

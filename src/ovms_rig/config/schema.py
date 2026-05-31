@@ -13,7 +13,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LogLevel = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"]
-KvCachePrecision = Literal["u8", "f16"]
 Device = Literal["CPU", "GPU", "NPU"]
 # Task taxonomy as accepted by `ovms --pull --task`. Set per model when the
 # model is generative (pull cannot infer it from the HF repo). Left unset for
@@ -58,7 +57,8 @@ class Graph(_Strict):
     # cache_size in GB; 0 means dynamic per OVMS convention.
     cache_size: int | None = Field(default=None, ge=0)
     dynamic_split_fuse: bool | None = None
-    kv_cache_precision: KvCachePrecision | None = None
+    # KV cache precision is an OpenVINO plugin property, not an
+    # LLMCalculatorOptions field; set it via plugin_config.KV_CACHE_PRECISION.
 
     draft_device: Device | None = None
     # Reference into ovms.yaml `repository:` keys. Resolved to a filesystem path

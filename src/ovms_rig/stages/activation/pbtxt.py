@@ -218,7 +218,6 @@ def collect_pbtxt_fields(
             "enable_prefix_caching",
             "cache_size",
             "dynamic_split_fuse",
-            "kv_cache_precision",
         ):
             value = getattr(entry_graph, name)
             if value is not None:
