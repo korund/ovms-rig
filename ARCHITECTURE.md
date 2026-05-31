@@ -20,9 +20,9 @@ The point of the document is so that future-me (and any reader) understands not 
 
 **Decision.** Three levels instead of one flat list of endpoints:
 
-- **`repository`:** model identities (HF reference + task). Declared once; the same model can appear in several endpoints.
-- **`models`:** HTTP endpoints. Each one references a `repository` entry via `.source` and carries its own `graph` (`LLMCalculatorOptions` fields).
-- **`profiles`:** named groups of endpoints (a list of names from `models:`). Only one profile can be active.
+- **repository:** model identities (a weights source -- fetched from an external location or read from a local directory -- plus an optional task). Declared once; the same model can appear in several endpoints.
+- **models:** HTTP endpoints. Each one references a `repository` entry via `.source` and carries its own `graph` (`LLMCalculatorOptions` fields).
+- **profiles:** named groups of endpoints (a list of names from `models:`). Only one profile can be active.
 
 **Why.** Without the `repository` layer we would have HF identifier duplication everywhere a model is mentioned (as a target and as a draft in another endpoint). Without the `profiles` layer, switching between configurations ("14B speculative" vs "8B flat for debug") would require editing `models:` by hand or juggling git branches.
 
@@ -39,6 +39,29 @@ The point of the document is so that future-me (and any reader) understands not 
 ### 1.4. Speculative decoding as an emergent property
 
 See 1.1. Worth stating separately: this is the central idea behind the shape of the declaration. The utility **does not know** what speculative decoding is. It knows that `graph:` contains a bag of fields to patch into `LLMCalculatorOptions`. The semantics are OVMS's concern.
+
+### 1.5. Model source: a fetched-or-local abstraction, not a fixed list
+
+**Decision.** A `repository` entry declares where its weights come from, as exactly one source kind, along one stable axis:
+
+- **fetched** -- pulled from an external location. Today: `hf:` (a HuggingFace id, via `ovms --pull`).
+- **local** -- read from a directory the user manages, never fetched: `dir:` (absolute, or relative to `local.models.repository_path`).
+
+The validator enforces exactly-one and treats the kinds as an open set: adding a kind is a one-line change here, while the rest of the docs -- which speak of "a fetched or local source", not of specific kinds -- stay correct.
+
+**Why.** `ovms --pull` only understands HuggingFace, so `hf` is permanently the "pull from HF" coordinate -- it cannot mean anything else. But not every model comes from HF: plain (non-task) models are often dropped into a directory by hand, and earlier the only way to express that was to abuse `hf` as a bare directory name -- a field whose name promised HuggingFace while nothing was pulled. Naming the source by category (fetched/local) rather than by a closed list makes `hf` honest (one option among several), gives local models an explicit field, and keeps both schema and prose extensible.
+
+**Alternative.** A discriminated union (`source: {kind: hf, ref: ...}`). Rejected: heavier and more verbose than the codebase's flat mutually-exclusive-optionals style (already used for `graph`/`plain`), and it would force renaming the unrelated `models[].source` reference field.
+
+**Consequence.** `fetch` is a no-op for any local source. The source kind is independent from `task`: a model of any source kind may be task-based or plain.
+
+**Deferred.** `github` -- rig fetching a release/repo itself, beyond OVMS's HF-only pull -- is simply another *fetched* kind: it joins the list in this section and needs no changes elsewhere.
+
+### 1.6. Plain (non-task) models: a loose `plain:` pass-through
+
+**Decision.** A non-task model (no `task`) is served through OVMS `model_config_list` instead of a mediapipe graph. Its options (`shape`, `layout`, `batch_size`, `nireq`, `model_version_policy`, `allow_cache`, ...) go in a `plain:` block that rig forwards verbatim, without validating keys -- exactly like `plugin_config`.
+
+**Why.** The `model_config_list` option set is large and tracks upstream OVMS; typing it would be a permanent chase. OVMS validates these at load, so rig stays a pass-through. Contrast `graph:`, whose `LLMCalculatorOptions` set is small and stable enough to type. `plain` and `graph` are mutually exclusive: a model is either task/graph or plain.
 
 ---
 

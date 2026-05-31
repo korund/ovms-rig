@@ -6,9 +6,9 @@ A declarative loader for [OpenVINO Model Server](https://github.com/openvinotool
 
 One `ovms.yaml` describes:
 
-- **`repository`** -- which models are needed (HuggingFace identity + task).
-- **`models`** -- which endpoints to bring up and with which parameters (`LLMCalculatorOptions`: device, KV-cache, draft, etc.).
-- **`profiles`** -- groups of endpoints you switch between with one command. Exactly one is active at a time.
+- **repository** -- which models are needed, where each one's weights come from (a fetched source or a local directory), and its task.
+- **models** -- endpoints and their parameters. A model with a `task` (`text_generation`, `embeddings`, ...) is tuned via `graph:` (`LLMCalculatorOptions`); a model with no `task` is a plain single model, configured via `plain:` (`model_config_list` options).
+- **profiles** -- groups of endpoints you switch between with one command. Exactly one is active at a time.
 
 The CLI expands the declaration into the files OVMS needs (`config.json`, `graph.<name>.pbtxt`) and runs the server in the foreground.
 
@@ -18,7 +18,7 @@ As part of a larger project, I was looking for an LLM inference runtime on Intel
 
 That configuration already existed, but it was hardcoded into absolute Windows paths inside `config.json` and `graph.pbtxt`. Not reproducible, not portable, not shareable. `ovms-rig` turns it into a portable declaration while letting OVMS handle everything it already does well.
 
-For the "why exactly this way" details, see [DECISIONS.md](DECISIONS.md).
+For the "why exactly this way" details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation
 
@@ -59,20 +59,24 @@ Any change to `ovms.yaml` requires another `ovms-rig activate` -- it re-reads th
 
 The example `ovms.yaml` already declares `qwen3-14b` and `qwen3-0.6b`, so the Quick start works out of the box. For any other model, the full cycle is:
 
-1. Add an entry to `repository:` in `ovms.yaml` with your own short name and the HF identity:
+1. Add an entry to `repository:` in `ovms.yaml` with your own short name and where its weights come from -- a fetched source, or a local directory you manage (exactly one kind):
    ```yaml
    repository:
      my-model:
-       hf: OpenVINO/Qwen3-8B-int8-ov
+       hf: OpenVINO/Qwen3-8B-int8-ov   # fetched from HuggingFace via `ovms --pull`
        task: text_generation
+     # or, for weights you place yourself:
+     # my-local-model:
+     #   dir: /opt/models/my-model     # local; absolute, or relative to models.repository_path
+     #   # omit `task` for a plain (non-LLM) model
    ```
-2. `ovms-rig fetch my-model` -- pulls the model to disk.
-3. Add a `models:` entry that references it via `.source: my-model`, with the `graph:` parameters you want.
+2. `ovms-rig fetch my-model` -- fetches the model to disk. (A local `dir:` source has nothing to fetch, so `fetch` is a no-op for it.)
+3. Add a `models:` entry that references it via `.source: my-model`. For an LLM model give the `graph:` parameters you want; for a plain (non-task) model use `plain:` for its `model_config_list` options instead.
 4. Reference the new endpoint from a profile, then `ovms-rig activate <profile>`.
 
 `remove` is the inverse of `fetch`: deletes the on-disk artifacts and the corresponding `config.json` entry, but does not edit `ovms.yaml`.
 
-> **Note on naming.** `fetch` takes the rig-local short name (`my-model`), not the HF repository path. The indirection separates *identity* (HF source + task, declared once under `repository:`) from *references* to that identity (`models[].source`, `graph.draft_model`). Reusing one model in multiple roles, or swapping its upstream source, is a one-line edit instead of a multi-place rename.
+> **Note on naming.** `fetch` takes the rig-local short name (`my-model`), not the HF repository path. The indirection separates *identity* (the weights source -- fetched or local -- plus task, declared once under `repository:`) from *references* to that identity (`models[].source`, `graph.draft_model`). Reusing one model in multiple roles, or swapping its upstream source, is a one-line edit instead of a multi-place rename.
 
 ## Commands
 
@@ -97,7 +101,7 @@ An important quirk: at the time of writing, OVMS 2026.1 **does not** propagate `
 
 ```
 ovms-worker/
-|-- README.md, DECISIONS.md
+|-- README.md, ARCHITECTURE.md
 |-- pyproject.toml
 |-- config/
 |   |-- ovms.example.yaml      # declaration example (in git)
